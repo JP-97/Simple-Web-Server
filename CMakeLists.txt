@@ -4,6 +4,7 @@ project(sws)
 
 set(SOURCES
     src/main.c
+    src/command_line.c
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
