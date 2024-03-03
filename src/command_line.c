@@ -9,8 +9,6 @@ void parse_cli(int argc, char *argv[], struct cli **result){
     *result = NULL;
     
     int port_num;
-    struct cli *resp = (struct cli *)malloc(sizeof(struct cli));
-    memset(resp, 0, sizeof(struct cli));
 
     if(argc < 2){
         _print_help();
@@ -28,8 +26,9 @@ void parse_cli(int argc, char *argv[], struct cli **result){
         _print_help();
         return;
     }
-    resp->port = port_num;
 
+    struct cli *resp = (struct cli *)calloc(1, sizeof(struct cli));
+    resp->port = port_num;
 
     *result = resp;
 

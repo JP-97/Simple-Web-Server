@@ -6,12 +6,12 @@
 # define PORT_MAX 10000
 
 struct cli {
-    int port;
+    int port; /**< Port in which the server will run locally. */
 };
 
 
 /**
- * Parse and validate CLI options provided to server application
+ * @brief Parse and validate CLI options provided to server application
  *
  * @param argc integer containing number of cli arguments
  * @param argv array of char pointers, where each pointer points to cli argument as a string
