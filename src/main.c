@@ -46,11 +46,12 @@ int main(int argc, char *argv[]){
 static int run_server(struct cli *cli_in){
     struct addrinfo hints, *result, *rp;
     int candidate_sockets, server_fd, client_fd, got_info, flags, bytes_read;
-    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE], in_buf[BUFF_SIZE], method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN];
+    // TODO Clean all these array declarations up so GET methods return a reference instead of needing 2 copies...
+    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE], in_buf[BUFF_SIZE], method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN], *status, *body;
     struct sockaddr_in client_con;
     socklen_t client_con_size;
     http_req request;
-    http_resp *response = &(http_resp){.status_line = NULL};
+    http_resp response;
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
@@ -144,7 +145,8 @@ static int run_server(struct cli *cli_in){
 
         // Parse the request
         init_http_request(client_fd, MAX_IN_LEN, &request);
-        int result = get_http_response_from_request(request, &response);
+        init_http_response(&response);
+        int result = get_http_response_from_request(request, response);
 
         if (result == -1){
             printf("ERROR: Something went wrong processing HTTP request\n");
@@ -160,7 +162,20 @@ static int run_server(struct cli *cli_in){
         URI:      %s\n \
         HTTP VER: %s\n", method, uri, version);
 
-        writen(client_fd, response->status_line, strlen(response->status_line));
+        get_http_response_status(response, status);
+        get_http_response_body(response, body);
+
+        int bytes_written = writen(client_fd, status, MAX_RESP_STATUS_LEN);
+        if(bytes_written == -1){
+            return -1;
+        }
+
+        bytes_written = writen(client_fd, body, MAX_RESP_BODY_LEN);
+        if(bytes_written == -1){
+            return -1;
+        }
+        
+        destroy_http_response(&response);
         destroy_http_request(&request);
     }
 }

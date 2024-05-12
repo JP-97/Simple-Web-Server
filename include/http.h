@@ -1,4 +1,3 @@
-
 /**
  * @file http.h
  * @author Josh Poirier
@@ -13,16 +12,16 @@
 
 #include <stdlib.h>
 
-#define MAX_METHOD_LEN 5
-#define MAX_URI_LEN    50
-#define MAX_VER_LEN    5
+#define MAX_METHOD_LEN      5
+#define MAX_URI_LEN         50
+#define MAX_VER_LEN         5
 
-typedef struct _http_req *http_req;
+#define MAX_RESP_STATUS_LEN 20
+#define MAX_RESP_BODY_LEN   100
 
-typedef struct _http_resp {
-    char *status_line;
-} http_resp;
 
+typedef struct _http_req  *http_req;
+typedef struct _http_resp *http_resp;
 
 
 /**
@@ -34,9 +33,23 @@ void init_http_request(int client_fd, size_t max_req_len, http_req *result);
 
 
 /**
+ * @brief Initializer for HTTP response
+ * 
+ * @param result Pointer to http_resp where the result will be stored.
+ */
+void init_http_response(http_resp *result);
+
+
+/**
  * @brief Free all memory allocated to provided http_req object.
 */
 void destroy_http_request(http_req *request_to_destroy);
+
+
+/**
+ * @brief Free all memory allocated to provided http_req object.
+*/
+void destroy_http_response(http_resp *response_to_destroy);
 
 
 /**
@@ -72,6 +85,26 @@ int get_http_request_version(http_req req, char *version);
  * @param request_to_process Pointer to http_request to process 
  * @param http_response pointer to http_resp pointer
  */
-int get_http_response_from_request(http_req request_to_process, http_resp **http_response);
+int get_http_response_from_request(http_req request_to_process, http_resp response);
+
+
+/**
+ * @brief Get the http response status object
+ * 
+ * @param request_to_process 
+ * @param response 
+ * @return int 
+ */
+int get_http_response_status(http_resp response, char *status);
+
+
+/**
+ * @brief Get the http response body object
+ * 
+ * @param request_to_process 
+ * @param response 
+ * @return int 
+ */
+int get_http_response_body(http_resp response, char *body);
 
 #endif
