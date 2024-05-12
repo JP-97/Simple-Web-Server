@@ -10,6 +10,26 @@ struct _http_req{
     char version[MAX_VER_LEN];
 };
 
+struct _http_resp {
+    char *status_line;
+    char *body;
+};
+
+char* html_content = 
+    "<!DOCTYPE html>\n"
+    "<html lang=\"en\">\n"
+    "<head>\n"
+    "    <meta charset=\"UTF-8\">\n"
+    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+    "    <title>Test Page</title>\n"
+    "</head>\n"
+    "<body>\n"
+    "    <h1>Hello, world!</h1>\n"
+    "    <p>This is a test page.</p>\n"
+    "</body>\n"
+    "</html>\n";
+
+// REQUEST //
 
 void init_http_request(int client_fd, size_t max_req_len, http_req *result){
     char in_buf[max_req_len];
@@ -81,20 +101,68 @@ int get_http_request_version(http_req req, char *version){
 }
 
 
-int get_http_response_from_request(http_req request_to_process, http_resp **http_response){
-    
-    if(!request_to_process || !(*http_response))
-        return -1;
-
-    (*http_response)->status_line = "HTTP/1.0 404 ";
-    return 0;
-}
-
-
-
 void destroy_http_request(http_req *request_to_destroy){
     if(!(*request_to_destroy)) return
     
     free(*request_to_destroy);
     *request_to_destroy = NULL;
 } 
+
+
+// RESPONSE //
+
+
+void init_http_response(http_resp *result){
+    
+    if(!result)
+        return;
+
+    http_resp tmp_response = (http_resp) calloc(1, sizeof(struct _http_resp));
+    tmp_response->status_line = (char *) calloc(1, MAX_RESP_STATUS_LEN);
+    tmp_response->body = (char *) calloc(1, MAX_RESP_BODY_LEN);
+
+    *result = tmp_response;
+}
+
+
+void destroy_http_response(http_resp *response_to_destroy){
+    if(!response_to_destroy)
+        return;
+    
+    free((*response_to_destroy)->status_line);
+    free((*response_to_destroy)->body);
+
+    free(*response_to_destroy);
+    *response_to_destroy = NULL;
+}
+
+
+int get_http_response_from_request(http_req request_to_process, http_resp response){
+    
+    if(!request_to_process || !response)
+        return -1;
+
+    // TODO Need to add checks here to make sure status and body buffs are big enough!
+
+    strcpy("HTTP/1.0 200 OK\r\n", response->status_line);
+    strcpy(html_content, response->body);
+    return 0;
+}
+
+
+int get_http_response_status(http_resp response, char *status){
+    if(!response || !status)
+        return -1;
+
+    status = response->status_line;
+    return 0;
+}
+
+
+int get_http_response_body(http_resp response, char *body){
+    if(!response || !body)
+        return -1;
+
+    body = response->body;
+    return 0;
+}
