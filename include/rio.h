@@ -35,9 +35,9 @@ rio_t readn_b_init(int fd);
 /**
  * @brief Destroy the provided rio_t instance.
  * 
- * @param instance rio_t instance to destroy. 
+ * @param instance pointer to rio_t instance to destroy. 
  */
-void readn_b_destroy(rio_t instance);
+void readn_b_destroy(rio_t *instance);
 
 
 /**

@@ -8,12 +8,13 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include "command_line.h"
-#define BUFF_SIZE 500 // TODO need to optimize this
+#include "rio.h"
+#include "http.h"
+#define BUFF_SIZE 100 // TODO need to optimize this
+#define MAX_IN_LEN 100
 
 static int run_server(struct cli *cli_in);
 static void user_exit_handler(int exit_code);
-
-
 
 
 int main(int argc, char *argv[]){
@@ -22,7 +23,6 @@ int main(int argc, char *argv[]){
     parse_cli(argc, argv, &cli_in);
 
     if(cli_in == NULL){
-        printf("ERROR: Something went wrong parsing CLI parameters\n");
         exit(EXIT_FAILURE);
     }
 
@@ -30,12 +30,10 @@ int main(int argc, char *argv[]){
     free(cli_in);
     
     if (was_started == -1){
-        printf("ERROR: Something went wrong starting server\n");
         exit(EXIT_FAILURE);
     }
 
     exit(EXIT_SUCCESS);
-
 }
 
 
@@ -47,10 +45,12 @@ int main(int argc, char *argv[]){
  */
 static int run_server(struct cli *cli_in){
     struct addrinfo hints, *result, *rp;
-    int candidate_sockets, server_fd, client_fd, got_info, flags;
-    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE];
+    int candidate_sockets, server_fd, client_fd, got_info, flags, bytes_read;
+    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE], in_buf[BUFF_SIZE], method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN];
     struct sockaddr_in client_con;
     socklen_t client_con_size;
+    http_req request;
+    http_resp *response = &(http_resp){.status_line = NULL};
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
@@ -110,15 +110,15 @@ static int run_server(struct cli *cli_in){
            "Enter CTRL+C to kill the server...\n", host_name, port_num);
 
 
-    // Enter main loop and listen for incoming connections
-    // Once a connection is formed, parse the URL to figure out what endpoint needs to
-    // be called
-
     if (signal(SIGINT, user_exit_handler)){
         freeaddrinfo(result);
         close(server_fd);
         return 0;
     }
+
+    // Enter main loop and listen for incoming connections
+    // Once a connection is formed, parse the URL to figure out what endpoint needs to
+    // be called
 
     while(1){
         // Check if there is a connection
@@ -141,11 +141,32 @@ static int run_server(struct cli *cli_in){
         }
 
         printf("Successfully established connection with %s!\n", client_addr);
-    }
 
+        // Parse the request
+        init_http_request(client_fd, MAX_IN_LEN, &request);
+        int result = get_http_response_from_request(request, &response);
+
+        if (result == -1){
+            printf("ERROR: Something went wrong processing HTTP request\n");
+            return -1;
+        }
+
+        get_http_request_method(request, method);
+        get_http_request_uri(request, uri);
+        get_http_request_version(request, version);
+
+        printf("Read the following input:\n \
+        METHOD:   %s\n \
+        URI:      %s\n \
+        HTTP VER: %s\n", method, uri, version);
+
+        writen(client_fd, response->status_line, strlen(response->status_line));
+        destroy_http_request(&request);
+    }
 }
 
+
 static void user_exit_handler(int exit_code){
-    printf("Goodbye...\n");
-    return;
+    printf("\nGoodbye...\n");
+    exit(EXIT_SUCCESS);
 }

@@ -32,14 +32,17 @@ rio_t readn_b_init(int fd){
     resp->fd = fd;
     resp->remaining = 0;
     resp->rio_bufptr = resp->rio_buf;
+    
+    return resp;
 }
 
 
-void readn_b_destroy(rio_t instance){
-    if (!instance)
-        return;
+void readn_b_destroy(rio_t *instance){
+    // Return if already NULL
+    if (!(*instance)) return
     
-    free(instance);
+    free(*instance);
+    *instance = NULL;
 }
 
 
@@ -68,13 +71,13 @@ ssize_t readn_b(rio_t rp, void *userbuf, size_t num_bytes){
 
 ssize_t readline_b(rio_t rp, void *userbuf, size_t maxlen){
     
-    char *ptr = (char *) userbuf;
+    char *ptr = (char *)userbuf;
     int i = 0, num_read = 0, was_read;
 
     while (num_read < maxlen){
 
         // Read one character at a time until new line is encountered
-        was_read = read_b(rp, userbuf, 1);
+        was_read = read_b(rp, ptr, 1);
 
         if (was_read == 0 && num_read == 0){
             // EOF - nothing was read
@@ -88,14 +91,16 @@ ssize_t readline_b(rio_t rp, void *userbuf, size_t maxlen){
             printf("ERROR: Failed trying to read a byte from %d...\n", rp->fd);
             return -1;
         
-        } else if (ptr[++i] == '\n'){
+        } else if (((char*)userbuf)[i] == '\n'){
             // End of line encountered
-            break;
+            num_read++;
+            return num_read;
         }
-
+        i++;
+        ptr++;
         num_read++;
+       
     }
-
     return num_read;
 }
 
@@ -165,7 +170,7 @@ static ssize_t read_b(rio_t rp, void *userbuf, size_t num_to_read){
 
     // Copy data from rio_buf to userbuf
     num_copied = min(num_to_read, rp->remaining); // It's likely we were able to copy more to internal buf than required
-    memcpy(userbuf, rp->rio_buf, num_copied);
+    memcpy(userbuf, rp->rio_bufptr, num_copied);
     rp->remaining -= num_copied;
     rp->rio_bufptr += num_copied;
 
