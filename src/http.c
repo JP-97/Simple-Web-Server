@@ -11,23 +11,22 @@ struct _http_req{
 };
 
 struct _http_resp {
-    char *status_line;
-    char *body;
+    char status[MAX_RESP_STATUS_LEN];
+    char body[MAX_RESP_BODY_LEN];
 };
 
-char* html_content = 
-    "<!DOCTYPE html>\n"
-    "<html lang=\"en\">\n"
-    "<head>\n"
-    "    <meta charset=\"UTF-8\">\n"
-    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
-    "    <title>Test Page</title>\n"
-    "</head>\n"
-    "<body>\n"
-    "    <h1>Hello, world!</h1>\n"
-    "    <p>This is a test page.</p>\n"
-    "</body>\n"
-    "</html>\n";
+char html_content[] = "Content-type: text/html\r\n"
+                      "Content-length: 30\r\n\r\n"
+                      
+                      "<!DOCTYPE html>\r\n"
+                      "<html>\r\n"
+                      "<head>\r\n"
+                      "<title>Hello, World!</title>\r\n"
+                      "</head>\r\n"
+                      "<body>\r\n"
+                        "<h1>Hello, World!</h1>\r\n"
+                      "</body>\r\n"
+                      "</html>\r\n";
 
 // REQUEST //
 
@@ -46,11 +45,10 @@ void init_http_request(int client_fd, size_t max_req_len, http_req *result){
         return;
 
     rio_t in_parser = readn_b_init(client_fd);
-    memset(in_buf, 0, sizeof(in_buf));
+    memset(in_buf, 0, max_req_len);
 
     // Read first line from input buffer
     int bytes_read = readline_b(in_parser, in_buf, max_req_len-1);
-    in_buf[bytes_read+1] = '\0'; // Null terminate so we can treat as a string
     readn_b_destroy(&in_parser);
 
     // Parse first line
@@ -75,7 +73,7 @@ int get_http_request_method(http_req req, char *method){
         return -1;
     }
 
-    strncpy(method, req->method, MAX_METHOD_LEN);
+    strncpy(method, req->method, MAX_METHOD_LEN); //TODO this is pretty dangerous... caller should specify max length (ie size of method buf)
     return 0;
 }
 
@@ -111,15 +109,18 @@ void destroy_http_request(http_req *request_to_destroy){
 
 // RESPONSE //
 
+void init_http_response(http_resp *result){    
+    http_resp tmp_response;
 
-void init_http_response(http_resp *result){
-    
     if(!result)
         return;
 
-    http_resp tmp_response = (http_resp) calloc(1, sizeof(struct _http_resp));
-    tmp_response->status_line = (char *) calloc(1, MAX_RESP_STATUS_LEN);
-    tmp_response->body = (char *) calloc(1, MAX_RESP_BODY_LEN);
+    *result = NULL;
+
+    tmp_response = (http_resp) calloc(1, sizeof(struct _http_resp));
+    
+    if(!tmp_response) 
+        return;
 
     *result = tmp_response;
 }
@@ -128,9 +129,6 @@ void init_http_response(http_resp *result){
 void destroy_http_response(http_resp *response_to_destroy){
     if(!response_to_destroy)
         return;
-    
-    free((*response_to_destroy)->status_line);
-    free((*response_to_destroy)->body);
 
     free(*response_to_destroy);
     *response_to_destroy = NULL;
@@ -144,25 +142,25 @@ int get_http_response_from_request(http_req request_to_process, http_resp respon
 
     // TODO Need to add checks here to make sure status and body buffs are big enough!
 
-    strcpy("HTTP/1.0 200 OK\r\n", response->status_line);
-    strcpy(html_content, response->body);
+    strncpy(response->status, "HTTP/1.0 200 OK\r\n", MAX_RESP_STATUS_LEN);
+    strncpy(response->body, html_content, MAX_RESP_BODY_LEN);
     return 0;
 }
 
 
-int get_http_response_status(http_resp response, char *status){
+int get_http_response_status(http_resp response, char *status, size_t max_status_len){
     if(!response || !status)
         return -1;
 
-    status = response->status_line;
+    strncpy(status, response->status, min(max_status_len, MAX_RESP_STATUS_LEN));
     return 0;
 }
 
 
-int get_http_response_body(http_resp response, char *body){
+int get_http_response_body(http_resp response, char *body, size_t max_body_len){
     if(!response || !body)
         return -1;
 
-    body = response->body;
+    strncpy(body, response->body, max_body_len);
     return 0;
 }

@@ -47,7 +47,7 @@ static int run_server(struct cli *cli_in){
     struct addrinfo hints, *result, *rp;
     int candidate_sockets, server_fd, client_fd, got_info, flags, bytes_read;
     // TODO Clean all these array declarations up so GET methods return a reference instead of needing 2 copies...
-    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE], in_buf[BUFF_SIZE], method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN], *status, *body;
+    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE], in_buf[BUFF_SIZE], method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN], status[BUFF_SIZE], body[MAX_RESP_BODY_LEN];
     struct sockaddr_in client_con;
     socklen_t client_con_size;
     http_req request;
@@ -162,10 +162,10 @@ static int run_server(struct cli *cli_in){
         URI:      %s\n \
         HTTP VER: %s\n", method, uri, version);
 
-        get_http_response_status(response, status);
-        get_http_response_body(response, body);
+        get_http_response_status(response, status, BUFF_SIZE);
+        get_http_response_body(response, body, MAX_RESP_BODY_LEN);
 
-        int bytes_written = writen(client_fd, status, MAX_RESP_STATUS_LEN);
+        int bytes_written = writen(client_fd, status, BUFF_SIZE);
         if(bytes_written == -1){
             return -1;
         }

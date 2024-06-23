@@ -7,7 +7,6 @@
 #include "rio.h"
 
 #define EXIT_FAILURE_RIO -1
-#define min(a,b) ((a) < (b) ? (a) : (b))
 
 
 static ssize_t read_b(rio_t rp, void *userbuf, size_t num_to_read);
@@ -28,7 +27,10 @@ struct rio_struct {
 
 
 rio_t readn_b_init(int fd){
-    rio_t resp = (rio_t) calloc(1, sizeof(rio_t));
+    rio_t resp = (rio_t) calloc(1, sizeof(struct rio_struct));
+
+    if(!resp) return NULL;
+
     resp->fd = fd;
     resp->remaining = 0;
     resp->rio_bufptr = resp->rio_buf;
@@ -94,6 +96,7 @@ ssize_t readline_b(rio_t rp, void *userbuf, size_t maxlen){
         } else if (((char*)userbuf)[i] == '\n'){
             // End of line encountered
             num_read++;
+            printf("Found end of line after reading %d bytes\n", num_read);
             return num_read;
         }
         i++;
@@ -109,7 +112,7 @@ ssize_t readline_b(rio_t rp, void *userbuf, size_t maxlen){
 ssize_t writen(int fd, void *userbuf, size_t num_bytes){
     int max_retries = 5, retry_num = 0, bytes_left = num_bytes;
     ssize_t bytes_written = 0;
-    char *bufp = userbuf;
+    char *bufp = (char *)userbuf;
     
     // Retry the write until num_bytes has been transfered to fd
     // or we encounter write sys call explicitly fails
@@ -133,7 +136,7 @@ ssize_t writen(int fd, void *userbuf, size_t num_bytes){
         bufp += bytes_written;
     }
 
-    printf("Successfully wrote %ldB to fd %d...", num_bytes, fd);
+    printf("Successfully wrote %ldB to fd %d...\n", bytes_written, fd);
     return EXIT_SUCCESS;
 }
 
@@ -152,13 +155,13 @@ ssize_t writen(int fd, void *userbuf, size_t num_bytes){
  */
 static ssize_t read_b(rio_t rp, void *userbuf, size_t num_to_read){
     size_t num_copied;
-    
+    ssize_t tmp_bytes_read;
+
     // Refill the rio_buf if it's empty
     while(rp->remaining <= 0){
         rp->rio_bufptr = rp->rio_buf; // reset buf ptr
     
         rp->remaining = read(rp->fd, rp->rio_buf, sizeof(rp->rio_buf));
-
         if (rp->remaining == -1 && errno != EINTR){
             printf("ERROR: Encountered the following error trying to read from fd %d: %s\n", rp->fd, strerror(errno));
             return -1;

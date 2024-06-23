@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <sys/types.h>
 #define RIO_BUFFSIZE 8192
+#define min(a,b) ((a) < (b) ? (a) : (b))
 
 typedef struct rio_struct *rio_t;
 

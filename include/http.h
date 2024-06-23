@@ -17,7 +17,7 @@
 #define MAX_VER_LEN         5
 
 #define MAX_RESP_STATUS_LEN 20
-#define MAX_RESP_BODY_LEN   100
+#define MAX_RESP_BODY_LEN   8192
 
 
 typedef struct _http_req  *http_req;
@@ -92,10 +92,11 @@ int get_http_response_from_request(http_req request_to_process, http_resp respon
  * @brief Get the http response status object
  * 
  * @param request_to_process 
- * @param response 
+ * @param response
+ * @param max_status_len max length of status to copy into provided buffer 
  * @return int 
  */
-int get_http_response_status(http_resp response, char *status);
+int get_http_response_status(http_resp response, char *status, size_t max_status_len);
 
 
 /**
@@ -103,8 +104,9 @@ int get_http_response_status(http_resp response, char *status);
  * 
  * @param request_to_process 
  * @param response 
+ * @param max_body_len max length of body to copy into provided buffer
  * @return int 
  */
-int get_http_response_body(http_resp response, char *body);
+int get_http_response_body(http_resp response, char *body, size_t max_body_len);
 
 #endif
