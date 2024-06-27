@@ -47,7 +47,7 @@ static int run_server(struct cli *cli_in){
     struct addrinfo hints, *result, *rp;
     int candidate_sockets, server_fd, client_fd, got_info, flags, bytes_read;
     // TODO Clean all these array declarations up so GET methods return a reference instead of needing 2 copies...
-    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE], in_buf[BUFF_SIZE], method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN], status[BUFF_SIZE], body[MAX_RESP_BODY_LEN];
+    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE], in_buf[BUFF_SIZE], method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN], status[MAX_RESP_STATUS_LEN], resp_headers[MAX_RESP_HEADERS_LEN], body[MAX_RESP_BODY_LEN];
     struct sockaddr_in client_con;
     socklen_t client_con_size;
     http_req request;
@@ -124,59 +124,73 @@ static int run_server(struct cli *cli_in){
     while(1){
         // Check if there is a connection
         // For now, accept creates a blocking call until a connection is received
-
-
         client_con_size = sizeof(client_con);
         client_fd = accept(server_fd, (struct sockaddr*) &client_con, &client_con_size); // TODO optimize accept so that it's event driven and running in its own thread
         
         if (client_fd == -1){
             printf("ERROR: Could not accept client connection due to: %s\n", strerror(errno));
-            return -1;
+            exit(1);
         }
 
         // Get human readable conversion of client connection info
         got_info = getnameinfo((struct sockaddr*)&client_con, client_con_size, client_addr, BUFF_SIZE, NULL, 0, flags);
         if (got_info != 0){
             printf("ERROR: Could not determine human readable conversion of client info due to: %s\n", strerror(errno));
-            return -1;
+            exit(1);
         }
 
-        printf("Successfully established connection with %s!\n", client_addr);
 
-        // Parse the request
+        // TODO All of client connection handling should be done in a separate process
+        printf("Successfully established connection with %s!\n", client_addr);
         init_http_request(client_fd, MAX_IN_LEN, &request);
         init_http_response(&response);
-        int result = get_http_response_from_request(request, response);
 
-        if (result == -1){
-            printf("ERROR: Something went wrong processing HTTP request\n");
-            return -1;
-        }
-
+        printf("Processing HTTP request...\n");    
         get_http_request_method(request, method);
         get_http_request_uri(request, uri);
         get_http_request_version(request, version);
 
-        printf("Read the following input:\n \
+        printf("Got the following request:\n \
         METHOD:   %s\n \
         URI:      %s\n \
         HTTP VER: %s\n", method, uri, version);
 
-        get_http_response_status(response, status, BUFF_SIZE);
-        get_http_response_body(response, body, MAX_RESP_BODY_LEN);
+        printf("Formulating HTTP response...\n");
+        int result = get_http_response_from_request(request, response);
 
-        int bytes_written = writen(client_fd, status, BUFF_SIZE);
-        if(bytes_written == -1){
-            return -1;
+        if (result == -1){
+            printf("ERROR: Something went wrong processing HTTP request\n");
+            exit(1);
         }
 
-        bytes_written = writen(client_fd, body, MAX_RESP_BODY_LEN);
+        get_http_response_status(response, status, MAX_RESP_STATUS_LEN);
+        get_http_response_headers(response, resp_headers, MAX_RESP_HEADERS_LEN);
+        get_http_response_body(response, body, MAX_RESP_BODY_LEN);
+
+        printf("Formulated the following response:\n \
+        STATUS:  %s\n  \
+        HEADERS: %s\n  \
+        BODY:    %s    \n", status, resp_headers, body);
+
+        printf("Sending the HTTP response back to the client...\n");
+        int bytes_written = writen(client_fd, status, strlen(status));
         if(bytes_written == -1){
-            return -1;
+            exit(1);
+        }
+
+        bytes_written = writen(client_fd, resp_headers, strlen(resp_headers));
+        if(bytes_written == -1){
+            exit(1);
+        }
+
+        bytes_written = writen(client_fd, body, strlen(body));
+        if(bytes_written == -1){
+            exit(1);
         }
         
         destroy_http_response(&response);
         destroy_http_request(&request);
+        // exit(0);
     }
 }
 
