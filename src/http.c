@@ -12,13 +12,11 @@ struct _http_req{
 
 struct _http_resp {
     char status[MAX_RESP_STATUS_LEN];
+    char headers[MAX_RESP_HEADERS_LEN];
     char body[MAX_RESP_BODY_LEN];
 };
 
-char html_content[] = "Content-type: text/html\r\n"
-                      "Content-length: 30\r\n\r\n"
-                      
-                      "<!DOCTYPE html>\r\n"
+char html_content[] = "<!DOCTYPE html>\r\n"
                       "<html>\r\n"
                       "<head>\r\n"
                       "<title>Hello, World!</title>\r\n"
@@ -143,6 +141,7 @@ int get_http_response_from_request(http_req request_to_process, http_resp respon
     // TODO Need to add checks here to make sure status and body buffs are big enough!
 
     strncpy(response->status, "HTTP/1.0 200 OK\r\n", MAX_RESP_STATUS_LEN);
+    snprintf(response->headers, MAX_RESP_HEADERS_LEN, "Content-type: text/html\r\nContent-length: %ld\r\n\r\n", sizeof(html_content));
     strncpy(response->body, html_content, MAX_RESP_BODY_LEN);
     return 0;
 }
@@ -162,5 +161,14 @@ int get_http_response_body(http_resp response, char *body, size_t max_body_len){
         return -1;
 
     strncpy(body, response->body, max_body_len);
+    return 0;
+}
+
+
+int get_http_response_headers(http_resp response, char *headers, size_t max_header_len){
+    if(!response || !headers)
+        return -1;
+
+    strncpy(headers, response->headers, max_header_len);
     return 0;
 }

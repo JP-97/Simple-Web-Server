@@ -17,6 +17,7 @@
 #define MAX_VER_LEN         5
 
 #define MAX_RESP_STATUS_LEN 20
+#define MAX_RESP_HEADERS_LEN 200
 #define MAX_RESP_BODY_LEN   8192
 
 
@@ -89,24 +90,35 @@ int get_http_response_from_request(http_req request_to_process, http_resp respon
 
 
 /**
- * @brief Get the http response status object
+ * @brief Get the http response status
  * 
- * @param request_to_process 
- * @param response
+ * @param response the response from which to retrieve the status
+ * @param status the buffer to store the status
  * @param max_status_len max length of status to copy into provided buffer 
- * @return int 
- */
+ * @return int 0 on success, otherwise -1.
+ */ 
 int get_http_response_status(http_resp response, char *status, size_t max_status_len);
 
 
 /**
- * @brief Get the http response body object
+ * @brief Get the http response body
  * 
- * @param request_to_process 
- * @param response 
+ * @param response the response from which to retrieve the body
+ * @param body buffer to store the body
  * @param max_body_len max length of body to copy into provided buffer
  * @return int 
  */
 int get_http_response_body(http_resp response, char *body, size_t max_body_len);
+
+
+/**
+ * @brief Get the http response headers
+ * 
+ * @param response the response from which to get the headers
+ * @param headers the buffer to store the headers
+ * @param max_body_len max length of headers to copy into provided buffer
+ * @return int 
+ */
+int get_http_response_headers(http_resp response, char *headers, size_t max_body_len);
 
 #endif
