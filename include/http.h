@@ -16,7 +16,7 @@
 #define MAX_URI_LEN         50
 #define MAX_VER_LEN         5
 
-#define MAX_RESP_STATUS_LEN 20
+#define MAX_RESP_STATUS_LEN 60
 #define MAX_RESP_HEADERS_LEN 200
 #define MAX_RESP_BODY_LEN   8192
 

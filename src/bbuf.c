@@ -1,0 +1,163 @@
+#include <semaphore.h>
+#include <errno.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include "bbuf.h"
+
+/*Forward Declarations*/
+static sem_t *init_unamed_semaphore(unsigned int initial_value);
+
+int bbuf_init(bbuf_t **bbuf){
+    if(!bbuf){
+        printf("ERROR: Can't initialize a NULL pointer!\n");
+        return -1;
+    }
+
+    bbuf_t *tmp_buff = (bbuf_t *) malloc(sizeof(bbuf_t));
+
+    if(!tmp_buff){
+        perror("ERROR: Failed to initialize bounded buffer\n");
+        return -1;
+    }
+
+    tmp_buff->buff = (int *) calloc(BBUF_SIZE, sizeof(int));
+    if(!tmp_buff->buff){
+        perror("ERROR: Failed to initialize bounded buffer\n");
+        return -1;
+    }
+
+    sem_t *mutex = init_unamed_semaphore(1);
+    if(!mutex){
+        perror("ERROR: Failed to initialize bounded buffer mutex\n");
+        return -1;
+    }
+
+    sem_t *slots = init_unamed_semaphore(25);
+    if(!slots){
+        perror("ERROR: Failed to initialize bounded buffer slots semaphore\n");
+        return -1;
+    }
+
+    sem_t *items = init_unamed_semaphore(0);
+    if(!items){
+        perror("ERROR: Failed to initialize bounded buffer items semaphore\n");
+        return -1;
+    }
+
+    tmp_buff->max_size = BBUF_SIZE;
+    tmp_buff->front = 0;
+    tmp_buff->rear = 0;
+    
+    tmp_buff->mutex = mutex;
+    tmp_buff->slots = slots;
+    tmp_buff->items = items;
+
+    *bbuf = tmp_buff;
+
+    return 0;
+}
+
+int bbuff_free(bbuf_t **bbuf){
+    if(!bbuf || !(*bbuf)){
+        // Nothing to free...
+        return 0;
+    }
+    
+    else if ((*bbuf)->buff){
+        free((*bbuf)->buff);
+        (*bbuf)->buff = NULL;
+    }
+
+    free(*bbuf);
+    *bbuf = NULL;
+
+    return 0;
+}
+
+int bbuf_insert(bbuf_t *bbuf, int fd_to_insert){
+    if(!bbuf){
+        printf("ERROR: NULL buffer reference provided!\n");
+        return -1;
+    }
+    pthread_t thread_id = pthread_self();
+    // Wait until there's a free slot
+    sem_wait(bbuf->slots);
+    // Wait until the mutex is free
+    sem_wait(bbuf->mutex);
+    // Insert slot at end of buffer
+    bbuf->buff[(bbuf->rear)%(bbuf->max_size)] = fd_to_insert;
+    (bbuf->rear)++;
+    printf("DEBUG: Thread %lu: Inserted fd %d at index %d\n", (unsigned long)thread_id, fd_to_insert, (bbuf->rear)%(bbuf->max_size));
+    // Release mutex
+    sem_post(bbuf->mutex);
+    // Increment Item
+    sem_post(bbuf->items);
+    return 0;
+}
+
+int bbuf_remove(bbuf_t *bbuf, int *fd){
+    if(!bbuf){
+        printf("ERROR: NULL buffer reference provided!\n");
+        return -1;
+    }
+    pthread_t thread_id = pthread_self();
+    // Wait until there's an item
+    sem_wait(bbuf->items);
+    // Wait until the mutex is free
+    sem_wait(bbuf->mutex);
+    // Remove item from front of buffer
+    *fd = bbuf->buff[(bbuf->front)%(bbuf->max_size)];
+    (bbuf->front)++;
+    printf("DEBUG: Thread %lu: Removed fd %d from index %d\n",(unsigned long)thread_id, *fd, (bbuf->front)%(bbuf->max_size));
+    // Release mutex
+    sem_post(bbuf->mutex);
+    // Increment slot
+    sem_post(bbuf->slots);
+    return 0;
+}
+
+int get_bbuf_size(bbuf_t *bbuf){
+    if(!bbuf){
+        return -1;
+    }
+    return bbuf->max_size;
+}
+
+int get_bbuf_slots(bbuf_t *bbuf){
+    int tmp, rc;
+    if(!bbuf){
+        printf("ERROR: provided handle is null\n");
+        return -1;
+    }
+    rc = sem_getvalue(bbuf->slots, &tmp);
+    if(rc != 0){
+        perror("ERROR: Failed to get number of free slots\n");
+        return rc;
+    }
+    return tmp;
+}
+
+int get_bbuf_items(bbuf_t *bbuf){
+    int tmp, rc;
+    if(!bbuf){
+        printf("ERROR: provided handle is null\n");
+        return -1;
+    }
+    rc = sem_getvalue(bbuf->items, &tmp);
+    if(rc != 0){
+        perror("ERROR: Failed to get number of free items\n");
+        return rc;
+    }
+    return tmp;
+}
+
+static sem_t *init_unamed_semaphore(unsigned int initial_value){
+    sem_t *sem = (sem_t *) malloc(sizeof(sem_t));
+    if(!sem){
+        return NULL;
+    }
+
+    sem_init(sem, 0, initial_value);
+    return sem;
+}

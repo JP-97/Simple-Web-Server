@@ -41,10 +41,11 @@ rio_t readn_b_init(int fd){
 
 void readn_b_destroy(rio_t *instance){
     // Return if already NULL
-    if (!(*instance)) return
+    if (!(instance)) return;
     
     free(*instance);
     *instance = NULL;
+
 }
 
 
@@ -155,7 +156,6 @@ ssize_t writen(int fd, void *userbuf, size_t num_bytes){
  */
 static ssize_t read_b(rio_t rp, void *userbuf, size_t num_to_read){
     size_t num_copied;
-    ssize_t tmp_bytes_read;
 
     // Refill the rio_buf if it's empty
     while(rp->remaining <= 0){

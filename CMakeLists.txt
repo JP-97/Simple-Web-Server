@@ -9,18 +9,25 @@ set(SOURCES
     src/command_line.c
     src/rio.c
     src/http.c
+    src/bbuf.c
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES})
-target_include_directories(sws PRIVATE ${CMAKE_SOURCE_DIR}/include)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -pedantic")
 
-# Install target to /usr/local/bin/ so it's executable by name
-install(TARGETS sws DESTINATION bin)
+add_executable(${PROJECT_NAME} ${SOURCES})
+add_library(libsws ${SOURCES})
+
+target_include_directories(sws PRIVATE include)
+target_include_directories(libsws PRIVATE include)
 
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
 
-include(AddCMockaTest)
-if (UNIT_TESTING)
-    add_subdirectory(tests)
-endif (UNIT_TESTING)
+target_link_libraries(sws pthread)
+target_link_libraries(libsws pthread)
+
+
+# Add Unit Tests
+enable_testing()
+add_subdirectory(tests)
+

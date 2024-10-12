@@ -7,34 +7,23 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <semaphore.h>
+#include <pthread.h>
 #include "command_line.h"
 #include "rio.h"
 #include "http.h"
+#include "bbuf.h"
+
 #define BUFF_SIZE 100 // TODO need to optimize this
 #define MAX_IN_LEN 100
+#define MAX_BBUFF_LEN 25
+#define MAX_SERVER_HOSTNAME_LEN 25
+#define NUM_WORKER_THREADS 5
 
-static int run_server(struct cli *cli_in);
-static void user_exit_handler(int exit_code);
-
-
-int main(int argc, char *argv[]){
-    int was_started;
-    struct cli *cli_in;
-    parse_cli(argc, argv, &cli_in);
-
-    if(cli_in == NULL){
-        exit(EXIT_FAILURE);
-    }
-
-    was_started = run_server(cli_in);
-    free(cli_in);
-    
-    if (was_started == -1){
-        exit(EXIT_FAILURE);
-    }
-
-    exit(EXIT_SUCCESS);
-}
+static void run_server(struct cli *cli_in);
+static void set_up_signal_handlers();
+static int bind_server_port(int server_port, int *svr_fd, char *server_ip);
+void *process_incoming_request(void *args);
 
 
 /**
@@ -43,32 +32,97 @@ int main(int argc, char *argv[]){
  * @param cli_in struct containing CLI inputs which will be used to start the server.
  * @return 0 for success (user terminated server), -1 for error starting server.
  */
-static int run_server(struct cli *cli_in){
-    struct addrinfo hints, *result, *rp;
-    int candidate_sockets, server_fd, client_fd, got_info, flags, bytes_read;
+static void run_server(struct cli *cli_in){
+    int client_fd, server_fd, got_info;
     // TODO Clean all these array declarations up so GET methods return a reference instead of needing 2 copies...
-    char host_name[BUFF_SIZE], port_num[5], client_addr[BUFF_SIZE], in_buf[BUFF_SIZE], method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN], status[MAX_RESP_STATUS_LEN], resp_headers[MAX_RESP_HEADERS_LEN], body[MAX_RESP_BODY_LEN];
+    char host_name[MAX_SERVER_HOSTNAME_LEN], client_addr[BUFF_SIZE];
     struct sockaddr_in client_con;
     socklen_t client_con_size;
-    http_req request;
-    http_resp response;
+    pthread_t tids[NUM_WORKER_THREADS];
 
+    bbuf_t *bbuf;
+    if(bbuf_init(&bbuf) != 0){
+        printf("ERROR: Failed to set up bounded buffer!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    for(int i=0; i<NUM_WORKER_THREADS; i++){
+        pthread_create(&tids[i], NULL, process_incoming_request, bbuf);
+    }
+
+    int bound_server_port = bind_server_port(cli_in->port, &server_fd, host_name);
+    
+    if(bound_server_port != 0){
+        printf("ERROR: Failed to bind server to port %d\n", cli_in->port);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Successfully initialized server at %s:%d\n" \
+           "Enter CTRL+C to kill the server...\n", host_name, cli_in->port);
+
+    // Enter main loop and listen for incoming connections
+
+    while(1){
+        // Main thread is used for listening to connections and adding them to the buffer
+        client_con_size = sizeof(client_con);
+        client_fd = accept(server_fd, (struct sockaddr*) &client_con, &client_con_size);
+        
+        if (client_fd == -1){
+            printf("ERROR: Could not accept client connection due to: %s\n", strerror(errno));
+            exit(1);
+        }
+
+        // Get human readable conversion of client connection info
+        got_info = getnameinfo((struct sockaddr*)&client_con, client_con_size, client_addr, BUFF_SIZE, NULL, 0, NI_NUMERICHOST);
+        if (got_info != 0){
+            printf("ERROR: Could not determine human readable conversion of client info due to: %s\n", strerror(errno));
+            exit(1);
+        }
+
+        printf("Successfully established connection with %s!\n", client_addr);
+        
+        if (bbuf_insert(bbuf, client_fd) != 0){
+            printf("WARNING: Failed to insert client connection into buffer...\n");
+            continue;
+        };
+    }
+
+    for(int i=0; i<NUM_WORKER_THREADS; i++){
+        pthread_join(tids[i], NULL); // For now, I don't this this code is ever hit... we only exit on error or signal handler.
+    }
+}
+
+
+/**
+ * @brief Bind and listen on the provided port
+ * 
+ * @param server_port desired port number for the server.
+ * @param svr_fd pointer to the int where the server fd will be stored.
+ * @param server_ip pointer to hold the ip addr of the server.
+ *
+ * @return int 0 if server port was successfully bound, otherwise -1.
+ */
+static int bind_server_port(int server_port, int *svr_fd, char *server_ip){
+    struct addrinfo hints, *result, *rp;
+    int candidate_sockets, server_fd, flags;
+    char port_num[5];
+
+    // Set up hints struct which will define what type of
+    // socket we get allocated
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM; 
     hints.ai_flags = AI_PASSIVE;
-    sprintf(port_num, "%d", cli_in->port);
     flags = NI_NUMERICHOST;
 
+    sprintf(port_num, "%d", server_port);
 
-    printf("Starting server on port %d...\n", cli_in->port);
-    
     // Find a socket candidate
     candidate_sockets = getaddrinfo(NULL, port_num, &hints, &result);
 
     if (candidate_sockets != 0){
         printf("Failed to discover an address to bind to\n");
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     // Iterate through the linked list candidate sockets
@@ -88,7 +142,7 @@ static int run_server(struct cli *cli_in){
         close(server_fd);
     }
 
-    if (rp == NULL){
+    if (!rp){
         printf("Failed to bind to a socket!\n");
         close(server_fd);
         return -1;
@@ -100,52 +154,42 @@ static int run_server(struct cli *cli_in){
         return -1;
     }
 
+    *svr_fd = server_fd;
+
     // Get human-readable conversion of server address
-    got_info = getnameinfo(rp->ai_addr, rp->ai_addrlen, host_name, BUFF_SIZE, NULL, 0, flags);
+    int got_info = getnameinfo(rp->ai_addr, rp->ai_addrlen, server_ip, MAX_SERVER_HOSTNAME_LEN, NULL, 0, flags);
     if (got_info != 0){
         printf("ERROR: Could not determine human readable conversion of server info due to: %s\n", strerror(errno));
         close(server_fd);
         return -1;
     }
-    printf("Successfully initialized server at %s:%s\n" \
-           "Enter CTRL+C to kill the server...\n", host_name, port_num);
+
+    return 0;
+}
 
 
-    if (signal(SIGINT, user_exit_handler)){
-        freeaddrinfo(result);
-        close(server_fd);
-        return 0;
-    }
+/**
+ * @brief callback for handling incoming client requests
+ * 
+ * @param args input data for the callback
+ * @return void* NULL or exits.
+ */
+void *process_incoming_request(void *args){
+    bbuf_t *buff = (bbuf_t *) args;
+    int client_fd;
+    // TODO Clean all these array declarations up so GET methods return a reference instead of needing 2 copies...
+    char method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN], status[MAX_RESP_STATUS_LEN], resp_headers[MAX_RESP_HEADERS_LEN], body[MAX_RESP_BODY_LEN];
+    http_req request;
+    http_resp response;
 
-    // Enter main loop and listen for incoming connections
-    // Once a connection is formed, parse the URL to figure out what endpoint needs to
-    // be called
 
     while(1){
-        // Check if there is a connection
-        // For now, accept creates a blocking call until a connection is received
-        client_con_size = sizeof(client_con);
-        client_fd = accept(server_fd, (struct sockaddr*) &client_con, &client_con_size); // TODO optimize accept so that it's event driven and running in its own thread
+        bbuf_remove(buff, &client_fd);
+        printf("Processing client request fd %d", client_fd);
         
-        if (client_fd == -1){
-            printf("ERROR: Could not accept client connection due to: %s\n", strerror(errno));
-            exit(1);
-        }
-
-        // Get human readable conversion of client connection info
-        got_info = getnameinfo((struct sockaddr*)&client_con, client_con_size, client_addr, BUFF_SIZE, NULL, 0, flags);
-        if (got_info != 0){
-            printf("ERROR: Could not determine human readable conversion of client info due to: %s\n", strerror(errno));
-            exit(1);
-        }
-
-
-        // TODO All of client connection handling should be done in a separate process
-        printf("Successfully established connection with %s!\n", client_addr);
         init_http_request(client_fd, MAX_IN_LEN, &request);
         init_http_response(&response);
 
-        printf("Processing HTTP request...\n");    
         get_http_request_method(request, method);
         get_http_request_uri(request, uri);
         get_http_request_version(request, version);
@@ -190,12 +234,42 @@ static int run_server(struct cli *cli_in){
         
         destroy_http_response(&response);
         destroy_http_request(&request);
-        // exit(0);
+        close(client_fd);
     }
+
+    return NULL;
 }
 
 
-static void user_exit_handler(int exit_code){
+static void sig_int_handler(int exit_code){
     printf("\nGoodbye...\n");
     exit(EXIT_SUCCESS);
+}
+
+
+static void sig_term_handler(int exit_code){
+    printf("\nweb server was terminated!\n");
+    exit(EXIT_FAILURE);
+}
+
+
+static void set_up_signal_handlers(){
+    signal(SIGTERM, sig_term_handler);
+    signal(SIGINT, sig_int_handler);
+}
+
+
+int main(int argc, char *argv[]){
+    struct cli *cli_in;
+    parse_cli(argc, argv, &cli_in);
+
+    if(cli_in == NULL){
+       return EXIT_FAILURE;
+    }
+
+    set_up_signal_handlers();
+    run_server(cli_in);
+    free(cli_in);
+    
+    return EXIT_SUCCESS;
 }
