@@ -14,15 +14,22 @@ void parse_cli(int argc, char *argv[], struct cli **result){
         _print_help();
         return;
     }
-    else if(argc == 2 && (argv[1] == "help" || argv[1] == "--help" || argv[1] == "-h")){
+    else if(argc == 2 && (strcmp(argv[1], "help") == 0 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)){
         _print_help();
         return;
     }
 
     // Validate port number
-    port_num = atoi(argv[1]);
+    port_num = strtol(argv[1], NULL, 10);
 
-    if(port_num < PORT_MIN || port_num > PORT_MAX){
+    if(port_num == 0){
+        // non-integer provided for port
+        printf("Port must be able to cast to an integer!...\n\n");
+        _print_help();
+        return;
+    }
+
+    else if(port_num < PORT_MIN || port_num > PORT_MAX){
         _print_help();
         return;
     }
