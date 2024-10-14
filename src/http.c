@@ -16,6 +16,7 @@ struct _http_resp {
     char status[MAX_RESP_STATUS_LEN];
     char headers[MAX_RESP_HEADERS_LEN];
     char body[MAX_RESP_BODY_LEN];
+    http_response_type response_type;
 };
 
 char html_content[] = "<!DOCTYPE html>\r\n"
@@ -28,7 +29,9 @@ char html_content[] = "<!DOCTYPE html>\r\n"
                       "</body>\r\n"
                       "</html>\r\n";
 
-static bool http_resp_status_code_to_str(int status_code, char *buff);
+static void http_resp_status_code_to_str(int status_code, char *buff);
+static void formulate_full_response(http_req request_to_process, http_resp response);
+static void formulate_simple_response(http_req request_to_process, http_resp response);
 
 // REQUEST //
 
@@ -137,27 +140,30 @@ void destroy_http_response(http_resp *response_to_destroy){
 
 
 int get_http_response_from_request(http_req request_to_process, http_resp response){
-    u_int32_t status_code = 200;
-    char status_code_str[30];
 
     if(!request_to_process || !response)
-        return -1;
-
-    // Precheck to validate that the request ressource is available
-    if(strncmp(request_to_process->URI, "/", MAX_URI_LEN)){
-        printf("ERROR: Unrecognized ressource requested -> %s\n", request_to_process->URI);
-        status_code = 404;
+    {
+        // This needs to provide some internal error response back to client
+        formulate_simple_response(request_to_process, response);
     }
 
-    if(!http_resp_status_code_to_str(status_code, status_code_str)){
-        printf("ERROR: Failed to determine status code string representation for status %d\n", status_code);
-        return -1;
+    else if(strncmp(request_to_process->version, "0.9", MAX_VER_LEN) == 0)
+    {
+        formulate_simple_response(request_to_process, response);
     }
 
-    // Write the response back to client fd
-    snprintf(response->status, MAX_RESP_STATUS_LEN, "HTTP/%.1f %d %s\r\n", SERVER_HTTP_VER, status_code, status_code_str);
-    snprintf(response->headers, MAX_RESP_HEADERS_LEN, "Content-type: text/html\r\nContent-length: %ld\r\n\r\n", sizeof(html_content));
-    strncpy(response->body, html_content, MAX_RESP_BODY_LEN);
+    else if ((strncmp(request_to_process->version, "1.0", MAX_VER_LEN) == 0) || 
+             (strncmp(request_to_process->version, "1.1", MAX_VER_LEN) == 0))
+    {
+        formulate_full_response(request_to_process, response);
+    }
+
+    else 
+    {
+        // Error case of unrecognized version
+        formulate_full_response(request_to_process, response);
+    }
+
     return 0;
 }
 
@@ -188,24 +194,75 @@ int get_http_response_headers(http_resp response, char *headers, size_t max_head
     return 0;
 }
 
+
+int get_http_response_type(http_resp response, int *type){
+    if(!response || !type)
+        return -1;
+
+    *type = response->response_type;
+    return 0;
+}
+
 // HELPERS // 
 
-static bool http_resp_status_code_to_str(int status_code, char *buff){
+static void http_resp_status_code_to_str(int status_code, char *buff){
     
     if(!buff){
-        return false;
+        return;
     }
 
     switch(status_code){
-        case 200:
+        case OK:
             strncpy(buff, "OK", 30);
-            return true;
         
-        case 404:   
-            strncpy(buff, "Not Found", 30);
-            return true;
-        
-        default:    
-            return false;
+        case FILE_NOT_FOUND:   
+            strncpy(buff, "Not Found", 30);   
     }
+    return;
+}
+
+
+/**
+ * @brief Populate http_resp with full response (status and body)
+ * 
+ * @param request_to_process The client request to process.
+ * @param response The response formulated based on the client request.
+ */
+static void formulate_full_response(http_req request_to_process, http_resp response){
+    http_response_type status_code = OK;
+    char status_code_str[30];
+
+    printf("DEBUG: Formulating Full HTTP response...\n");
+
+    // Precheck to validate that the request ressource is available
+    if(strncmp(request_to_process->URI, "/", MAX_URI_LEN) != 0){
+        printf("ERROR: Unrecognized ressource requested -> %s\n", request_to_process->URI);
+        status_code = FILE_NOT_FOUND;
+    }
+
+    http_resp_status_code_to_str(status_code, status_code_str);
+
+    // Populate the response struct
+    snprintf(response->status, MAX_RESP_STATUS_LEN, "HTTP/%.1f %d %s\r\n", SERVER_HTTP_VER, status_code, status_code_str);
+    snprintf(response->headers, MAX_RESP_HEADERS_LEN, "Content-type: text/html\r\nContent-length: %ld\r\n\r\n", sizeof(html_content));
+    strncpy(response->body, html_content, MAX_RESP_BODY_LEN);
+
+    return;
+}
+
+
+/**
+ * @brief Populate http_resp with simple response contents.
+ *        Note: For a simple response, this means only sending back the response body.
+ * 
+ * @param request_to_process The client request to process.
+ * @param response The response formulated based on the client request.
+ */
+static void formulate_simple_response(http_req request_to_process, http_resp response){
+    printf("DEBUG: Formulating Simple HTTP response...\n");
+    
+    strncpy(response->body, html_content, MAX_RESP_BODY_LEN);
+    response->response_type = SIMPLE;
+
+    return;
 }

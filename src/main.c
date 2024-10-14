@@ -211,6 +211,7 @@ void *process_incoming_request(void *args){
             exit(1);
         }
 
+        // Log the response for debugging...
         get_http_response_status(response, status, MAX_RESP_STATUS_LEN);
         get_http_response_headers(response, resp_headers, MAX_RESP_HEADERS_LEN);
         get_http_response_body(response, body, MAX_RESP_BODY_LEN);
@@ -219,6 +220,8 @@ void *process_incoming_request(void *args){
         STATUS:  %s\n  \
         HEADERS: %s\n  \
         BODY:    %s    \n", status, resp_headers, body);
+
+        // TODO: Depending on the response type, need respond to the client differently
 
         printf("Sending the HTTP response back to the client...\n");
         int bytes_written = writen(client_fd, status, strlen(status));
