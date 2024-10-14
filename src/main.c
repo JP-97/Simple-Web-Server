@@ -23,6 +23,7 @@
 static void run_server(struct cli *cli_in);
 static void set_up_signal_handlers();
 static int bind_server_port(int server_port, int *svr_fd, char *server_ip);
+static int parse_request(int client_fd, http_req *result);
 void *process_incoming_request(void *args);
 
 
@@ -33,13 +34,16 @@ void *process_incoming_request(void *args);
  * @return 0 for success (user terminated server), -1 for error starting server.
  */
 static void run_server(struct cli *cli_in){
-    int client_fd, server_fd, got_info;
-    // TODO Clean all these array declarations up so GET methods return a reference instead of needing 2 copies...
-    char host_name[MAX_SERVER_HOSTNAME_LEN], client_addr[BUFF_SIZE];
+    int client_fd;
+    int server_fd;
+    int got_info;
+    char host_name[MAX_SERVER_HOSTNAME_LEN];
+    char client_addr[BUFF_SIZE];
     struct sockaddr_in client_con;
     socklen_t client_con_size;
-    pthread_t tids[NUM_WORKER_THREADS];
+    pthread_t tid;
 
+    // Set up bounded buffer and worker pool
     bbuf_t *bbuf;
     if(bbuf_init(&bbuf) != 0){
         printf("ERROR: Failed to set up bounded buffer!\n");
@@ -47,9 +51,10 @@ static void run_server(struct cli *cli_in){
     }
 
     for(int i=0; i<NUM_WORKER_THREADS; i++){
-        pthread_create(&tids[i], NULL, process_incoming_request, bbuf);
+        pthread_create(&tid, NULL, process_incoming_request, bbuf);
     }
 
+    // Set up server port
     int bound_server_port = bind_server_port(cli_in->port, &server_fd, host_name);
     
     if(bound_server_port != 0){
@@ -61,9 +66,7 @@ static void run_server(struct cli *cli_in){
            "Enter CTRL+C to kill the server...\n", host_name, cli_in->port);
 
     // Enter main loop and listen for incoming connections
-
     while(1){
-        // Main thread is used for listening to connections and adding them to the buffer
         client_con_size = sizeof(client_con);
         client_fd = accept(server_fd, (struct sockaddr*) &client_con, &client_con_size);
         
@@ -80,15 +83,11 @@ static void run_server(struct cli *cli_in){
         }
 
         printf("Successfully established connection with %s!\n", client_addr);
-        
+
         if (bbuf_insert(bbuf, client_fd) != 0){
             printf("WARNING: Failed to insert client connection into buffer...\n");
             continue;
         };
-    }
-
-    for(int i=0; i<NUM_WORKER_THREADS; i++){
-        pthread_join(tids[i], NULL); // For now, I don't this this code is ever hit... we only exit on error or signal handler.
     }
 }
 
@@ -175,29 +174,34 @@ static int bind_server_port(int server_port, int *svr_fd, char *server_ip){
  * @return void* NULL or exits.
  */
 void *process_incoming_request(void *args){
-    bbuf_t *buff = (bbuf_t *) args;
     int client_fd;
-    // TODO Clean all these array declarations up so GET methods return a reference instead of needing 2 copies...
-    char method[MAX_METHOD_LEN], version[MAX_VER_LEN], uri[MAX_URI_LEN], status[MAX_RESP_STATUS_LEN], resp_headers[MAX_RESP_HEADERS_LEN], body[MAX_RESP_BODY_LEN];
+    
+    char status[MAX_RESP_STATUS_LEN];
+    char resp_headers[MAX_RESP_HEADERS_LEN];
+    char body[MAX_RESP_BODY_LEN];
     http_req request;
     http_resp response;
 
+    pthread_detach(pthread_self());
 
+    if(!args){
+        printf("ERROR: Invalid reference to bounded buffer!\n");
+        exit(1);
+    }
+
+    bbuf_t *buff = (bbuf_t *) args;
+
+    // Infinitely monitor bounded buffer for work to consume
     while(1){
         bbuf_remove(buff, &client_fd);
         printf("Processing client request fd %d", client_fd);
         
-        init_http_request(client_fd, MAX_IN_LEN, &request);
         init_http_response(&response);
 
-        get_http_request_method(request, method);
-        get_http_request_uri(request, uri);
-        get_http_request_version(request, version);
-
-        printf("Got the following request:\n \
-        METHOD:   %s\n \
-        URI:      %s\n \
-        HTTP VER: %s\n", method, uri, version);
+        if(parse_request(client_fd, &request) != 0){
+            printf("ERROR: Something went wrong parsing HTTP Request\n");
+            exit(1);
+        }
 
         printf("Formulating HTTP response...\n");
         int result = get_http_response_from_request(request, response);
@@ -239,6 +243,45 @@ void *process_incoming_request(void *args){
 
     return NULL;
 }
+
+
+static int parse_request(int client_fd, http_req *result){
+    http_req tmp_req;
+    char method[MAX_METHOD_LEN];
+    char version[MAX_VER_LEN];
+    char uri[MAX_URI_LEN];
+
+    if(!result){
+        printf("ERROR: Invalid result reference provided!\n");
+        return -1;
+    }
+
+    if(client_fd < 0){
+        printf("ERROR: Bad client file descriptor provided!\n");
+        return -1;
+    }
+
+    init_http_request(client_fd, MAX_IN_LEN, &tmp_req);
+    
+    if(!tmp_req){
+        printf("ERROR: failed to parse request!\n");
+        return -1;
+    }
+    
+    get_http_request_method(tmp_req, method);
+    get_http_request_uri(tmp_req, uri);
+    get_http_request_version(tmp_req, version);
+
+    printf("Got the following request:\n \
+    METHOD:   %s\n \
+    URI:      %s\n \
+    HTTP VER: %s\n", method, uri, version);
+
+    *result = tmp_req;
+    return 0;
+}
+
+
 
 
 static void sig_int_handler(int exit_code){
