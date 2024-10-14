@@ -15,3 +15,4 @@ endfunction()
 
 add_sws_test(test_command_line)
 add_sws_test(test_bbuf)
+add_sws_test(test_main)
