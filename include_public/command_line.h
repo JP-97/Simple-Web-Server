@@ -1,5 +1,5 @@
-#ifndef CMD_LINE
-#define CMD_LINE
+#ifndef _CMD_LINE
+#define _CMD_LINE
 
 # define MIN_ARGUMENTS 2
 # define PORT_MIN 1500

@@ -7,35 +7,65 @@
  */
 
 
-#ifndef HTTP_H
-#define HTTP_H
+#ifndef _HTTP
+#define _HTTP
 
 #include <stdlib.h>
 
-#define MAX_METHOD_LEN      5
-#define MAX_URI_LEN         50
-#define MAX_VER_LEN         5
+#define MAX_METHOD_LEN        5
+#define MAX_URL_LEN           50
+#define MAX_RESSOURCE_LEN     50
+#define MAX_URI_LEN           MAX_URL_LEN + MAX_RESSOURCE_LEN
+#define MAX_VER_LEN           4  // 1.0, 1.1, etc. 
+#define MAX_HTML_CONTENT_SIZE 250
 
-#define MAX_RESP_STATUS_LEN 60
+#define MAX_RESP_STATUS_LEN  60
 #define MAX_RESP_HEADERS_LEN 200
-#define MAX_RESP_BODY_LEN   8192
+#define MAX_RESP_BODY_LEN    8192
 
+#define ENUM_GEN(ENUM) ENUM,
+#define STRING_GEN(STRING) #STRING,
+
+// Note: If you need to add new elems to FOREACH macros, only append, don't insert
+
+#define FOREACH_HTTP_RESPONSE_TYPE(RESPONSE_TYPE)           \
+                            RESPONSE_TYPE(SIMPLE)           \
+                            RESPONSE_TYPE(FULL)             \
+                            RESPONSE_TYPE(RESPONSE_TYPE_MAX) 
+
+#define FOREACH_HTTP_METHOD(HTTP_METHOD)                \
+                    HTTP_METHOD(GET)                    \
+                    HTTP_METHOD(HEAD)                   \
+                    HTTP_METHOD(POST)                   \
+                    HTTP_METHOD(UNKNOWN)                \
+                    HTTP_METHOD(HTTP_METHOD_MAX)     
+        
 
 typedef struct _http_req *http_req;
 typedef struct _http_resp *http_resp;
 
 
 typedef enum _http_return_code {
-    OK = 200,
-    FILE_NOT_FOUND = 404
+    OK              = 200,
+    BAD_REQUEST     = 400, 
+    FILE_NOT_FOUND  = 404,
+    INTERNAL_ERROR  = 500,
+    NOT_IMPLEMENTED = 501,
+    UNSUPPORTED_VER = 505
 
 } http_return_code;
 
-
-typedef enum _http_response_type {
-    SIMPLE,
-    FULL
+typedef enum _http_response_type  {
+    FOREACH_HTTP_RESPONSE_TYPE(ENUM_GEN)
 } http_response_type;
+
+extern char *http_response_type_strings[];
+
+typedef enum _http_method {
+    FOREACH_HTTP_METHOD(ENUM_GEN)
+} http_method;
+
+extern char *http_method_strings[];
 
 
 /**
@@ -72,7 +102,7 @@ void destroy_http_response(http_resp response_to_destroy);
  * @param req Pointer to initialized http request
  * @param method pointer to location where to store result.
  */
-int get_http_request_method(http_req req, char *method);
+int get_http_request_method(http_req req, http_method *method);
 
 
 /**
@@ -97,9 +127,10 @@ int get_http_request_version(http_req req, char *version);
  * @brief Get an http response based on an http_request
  * 
  * @param request_to_process Pointer to http_request to process 
- * @param http_response pointer to http_resp pointer
+ * 
+ * @return http_resp the initialized http response handler.
  */
-int get_http_response_from_request(http_req request_to_process, http_resp response);
+http_resp get_http_response_from_request(http_req request_to_process);
 
 
 /**

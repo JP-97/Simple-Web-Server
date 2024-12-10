@@ -1,0 +1,16 @@
+{
+    "files.associations": {
+        "netdb.h": "c",
+        "socket.h": "c",
+        "errno.h": "c",
+        "errno-base.h": "c",
+        "unistd.h": "c",
+        "cmocka.h": "c",
+        "semaphore.h": "c",
+        "command_line.h": "c",
+        "type_traits": "c",
+        "bbuf.h": "c",
+        "http.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
+}
