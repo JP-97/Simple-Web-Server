@@ -2,7 +2,7 @@
 import requests
 
 SERVER_HOSTNAME = "0.0.0.0"
-SERVER_PORT = "8000"
+SERVER_PORT = "8001"
 
 for _ in range(1):
     resp = requests.get(f"http://{SERVER_HOSTNAME}:{SERVER_PORT}")

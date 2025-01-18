@@ -8,14 +8,14 @@
 #include <stdbool.h>
 
 
-static int test_setup(void **state){
-    return 0;
-}
+// static int test_setup(void **state){
+//     return 0;
+// }
 
 
-static int test_teardown(void **state) {
-    return 0;
-}
+// static int test_teardown(void **state) {
+//     return 0;
+// }
 
 
 // int main(void) {

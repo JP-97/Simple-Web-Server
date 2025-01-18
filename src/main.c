@@ -10,6 +10,7 @@
 #include <semaphore.h>
 #include <pthread.h>
 #include "command_line.h"
+#include "stdbool.h"
 #include "rio.h"
 #include "http.h"
 #include "bbuf.h"
@@ -20,12 +21,32 @@
 #define MAX_SERVER_HOSTNAME_LEN 25
 #define NUM_WORKER_THREADS 5
 
+typedef struct _worker_data_t {
+    bbuf_t bbuf;
+} worker_data_t;
+
+
+// TODO: Lets create something cool for signal handling where if 
+// one of the worker threads runs into a problem a signal is sent up to a monitor thread (main thread?)
+// which then terminates the other worker threads gracefully. This will be a lot better than just killing
+// the whole process mid request - we can allow the thread to finish the request it's handling then process
+// the shutdown signal.
+
+// When user gives CTRL+C (or some other kill) the handler should
+
+//Acknowledge the signal and log a message to the output console of the server.
+//Notify all the connected clients that the server is going offline.
+//Give the clients enough time (specified by a timeout parameter) to close the requests.
+//Close all the client requests and then shut down the server after the timeout exceeds.
+
+
+
 static void run_server(struct cli *cli_in);
 static void set_up_signal_handlers();
+static bool set_up_worker_pool(worker_data_t *worker_data);
 static int bind_server_port(int server_port, int *svr_fd, char *server_ip);
 static int parse_request(int client_fd, http_req *result);
 void *process_incoming_request(void *args);
-
 
 /**
  * @brief Spawn the server's main loop using provided CLI inputs.
@@ -41,19 +62,26 @@ static void run_server(struct cli *cli_in){
     char client_addr[BUFF_SIZE];
     struct sockaddr_in client_con;
     socklen_t client_con_size;
-    pthread_t tid;
+    worker_data_t worker_data;
 
     // Set up bounded buffer and worker pool
-    bbuf_t *bbuf;
-    if(bbuf_init(&bbuf) != 0){
-        printf("ERROR: Failed to set up bounded buffer!\n");
+    bbuf_t bbuf = bbuf_init();
+
+    if(!bbuf){
         exit(EXIT_FAILURE);
     }
 
-    for(int i=0; i<NUM_WORKER_THREADS; i++){
-        pthread_create(&tid, NULL, process_incoming_request, bbuf);
-    }
+    worker_data.bbuf = bbuf;
 
+    // Note: All worker threads are initialized with same
+    // bbuf since the buffer is specifically built to operate with
+    // multiple users and synchronizes the access internally.
+    // worker_data can be stored on the stack because this function
+    // survives for the lifeftime of the program.
+    if(!set_up_worker_pool(&worker_data)){
+        exit(EXIT_FAILURE);
+    }
+    
     // Set up server port
     int bound_server_port = bind_server_port(cli_in->port, &server_fd, host_name);
     
@@ -84,6 +112,7 @@ static void run_server(struct cli *cli_in){
 
         printf("Successfully established connection with %s!\n", client_addr);
 
+        // Add the client FD to bounded buffer so it can be handled by one of workers
         if (bbuf_insert(bbuf, client_fd) != 0){
             printf("WARNING: Failed to insert client connection into buffer...\n");
             continue;
@@ -170,12 +199,16 @@ static int bind_server_port(int server_port, int *svr_fd, char *server_ip){
 /**
  * @brief callback for handling incoming client requests
  * 
+ * @note This function runs indefinitely, meaning it doesn't
+ *       exit until the server as a whole is closed. Once a request
+ *       is processed, the thread re-enters its loop where it monitors
+ *       for new client FDs added to the buffer.
+ * 
  * @param args input data for the callback
  * @return void* NULL or exits.
  */
 void *process_incoming_request(void *args){
     int client_fd;
-    
     char status[MAX_RESP_STATUS_LEN];
     char resp_headers[MAX_RESP_HEADERS_LEN];
     char body[MAX_RESP_BODY_LEN];
@@ -185,25 +218,30 @@ void *process_incoming_request(void *args){
     pthread_detach(pthread_self());
 
     if(!args){
-        printf("ERROR: Invalid reference to bounded buffer!\n");
+        printf("ERROR: No worker thread data provided!\n");
         exit(1);
     }
 
-    bbuf_t *buff = (bbuf_t *) args;
+    worker_data_t *data  = (worker_data_t *) args;
+    bbuf_t buff = data->bbuf;
 
-    // Infinitely monitor bounded buffer for work to consume
     while(1){
-        bbuf_remove(buff, &client_fd);
+        bbuf_remove(buff, &client_fd); // This blocks indefinitely until a request comes
         printf("Processing client request fd %d", client_fd);
         
-        init_http_response(&response);
-
         if(parse_request(client_fd, &request) != 0){
             printf("ERROR: Something went wrong parsing HTTP Request\n");
-            exit(1);
+            exit(1); ////////////////////////////////TODO: Instead of killing the entire program immediately, figure out how this thread can signal the others that they should exit once they're done with their request 
         }
 
         printf("Formulating HTTP response...\n");
+                response = init_http_response();
+
+        if(!response){
+            printf("ERROR: Failed to allocate memory for response!\n");
+            exit(1);
+        }
+
         int result = get_http_response_from_request(request, response);
 
         if (result == -1){
@@ -211,6 +249,7 @@ void *process_incoming_request(void *args){
             exit(1);
         }
 
+        // Log the response for debugging...
         get_http_response_status(response, status, MAX_RESP_STATUS_LEN);
         get_http_response_headers(response, resp_headers, MAX_RESP_HEADERS_LEN);
         get_http_response_body(response, body, MAX_RESP_BODY_LEN);
@@ -219,6 +258,8 @@ void *process_incoming_request(void *args){
         STATUS:  %s\n  \
         HEADERS: %s\n  \
         BODY:    %s    \n", status, resp_headers, body);
+
+        // TODO: Depending on the response type, need respond to the client differently
 
         printf("Sending the HTTP response back to the client...\n");
         int bytes_written = writen(client_fd, status, strlen(status));
@@ -236,8 +277,10 @@ void *process_incoming_request(void *args){
             exit(1);
         }
         
-        destroy_http_response(&response);
-        destroy_http_request(&request);
+        destroy_http_response(response);
+        response = NULL;
+        destroy_http_request(request);
+        request = NULL;
         close(client_fd);
     }
 
@@ -261,7 +304,7 @@ static int parse_request(int client_fd, http_req *result){
         return -1;
     }
 
-    init_http_request(client_fd, MAX_IN_LEN, &tmp_req);
+    tmp_req = init_http_request(client_fd, MAX_IN_LEN);
     
     if(!tmp_req){
         printf("ERROR: failed to parse request!\n");
@@ -282,6 +325,26 @@ static int parse_request(int client_fd, http_req *result){
 }
 
 
+/**
+ * @brief Initialize the worker threads that will handle incoming requests.
+ * 
+ * @param worker_data reference to data that will get passed to each of the worker threads
+ * 
+ * @returns true if all worker threads are successfully initialized, otherwise false.
+ */
+static bool set_up_worker_pool(worker_data_t *worker_data){
+    pthread_t tid;
+    int rc;
+
+    for(int i=0; i<NUM_WORKER_THREADS; i++){
+        if((rc = pthread_create(&tid, NULL, process_incoming_request, worker_data)) != 0){
+            printf("ERROR: Something went wrong creating one of the worker threads... got rc %d\n", rc);
+            return false;
+        }
+        printf("DEBUG: Created worker thread with thread ID: %lu\n", tid);
+    }
+    return true; 
+}
 
 
 static void sig_int_handler(int exit_code){
@@ -304,13 +367,14 @@ static void set_up_signal_handlers(){
 
 int main(int argc, char *argv[]){
     struct cli *cli_in;
+
+    set_up_signal_handlers();
     parse_cli(argc, argv, &cli_in);
 
-    if(cli_in == NULL){
+    if(!cli_in){
        return EXIT_FAILURE;
     }
 
-    set_up_signal_handlers();
     run_server(cli_in);
     free(cli_in);
     

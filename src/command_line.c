@@ -6,9 +6,14 @@
 static void _print_help();
 
 void parse_cli(int argc, char *argv[], struct cli **result){
-    *result = NULL;
-    
     int port_num;
+
+    if(!result){
+        printf("ERROR: invalid reference provided as input to arg parser...\n");
+        return;
+    }
+
+    *result = NULL;
 
     if(argc < 2){
         _print_help();
@@ -28,17 +33,20 @@ void parse_cli(int argc, char *argv[], struct cli **result){
         _print_help();
         return;
     }
-
     else if(port_num < PORT_MIN || port_num > PORT_MAX){
         _print_help();
         return;
     }
 
     struct cli *resp = (struct cli *)calloc(1, sizeof(struct cli));
+    
+    if(!resp){
+        printf("ERROR: Failed to allocate memory for parsed CLI arguments...\n");
+        return;
+    }
+
     resp->port = port_num;
-
     *result = resp;
-
     return;
 }
 

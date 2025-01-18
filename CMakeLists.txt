@@ -17,8 +17,11 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -pedantic")
 add_executable(${PROJECT_NAME} ${SOURCES})
 add_library(libsws ${SOURCES})
 
-target_include_directories(sws PRIVATE include)
-target_include_directories(libsws PRIVATE include)
+target_include_directories(sws PRIVATE include_public)
+target_include_directories(sws PRIVATE include_private)
+target_include_directories(libsws PRIVATE include_public)
+target_include_directories(libsws PRIVATE include_private)
+
 
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
