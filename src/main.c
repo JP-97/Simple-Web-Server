@@ -201,7 +201,7 @@ static int bind_server_port(int server_port, int *svr_fd, char *server_ip){
  * 
  * @note This function runs indefinitely, meaning it doesn't
  *       exit until the server as a whole is closed. Once a request
- *       is processed, the thread re-enters its loop where it monitors
+ *       is processed, the worker thread re-enters its loop where it monitors
  *       for new client FDs added to the buffer.
  * 
  * @param args input data for the callback
@@ -227,7 +227,7 @@ void *process_incoming_request(void *args){
 
     while(1){
         bbuf_remove(buff, &client_fd); // This blocks indefinitely until a request comes
-        printf("Processing client request fd %d", client_fd);
+        printf("Processing client request fd %d\n", client_fd);
         
         if(parse_request(client_fd, &request) != 0){
             printf("ERROR: Something went wrong parsing HTTP Request\n");
@@ -235,16 +235,10 @@ void *process_incoming_request(void *args){
         }
 
         printf("Formulating HTTP response...\n");
-                response = init_http_response();
 
-        if(!response){
-            printf("ERROR: Failed to allocate memory for response!\n");
-            exit(1);
-        }
+        response = get_http_response_from_request(request);
 
-        int result = get_http_response_from_request(request, response);
-
-        if (result == -1){
+        if (!response){
             printf("ERROR: Something went wrong processing HTTP request\n");
             exit(1);
         }
@@ -254,12 +248,10 @@ void *process_incoming_request(void *args){
         get_http_response_headers(response, resp_headers, MAX_RESP_HEADERS_LEN);
         get_http_response_body(response, body, MAX_RESP_BODY_LEN);
 
-        printf("Formulated the following response:\n \
-        STATUS:  %s\n  \
-        HEADERS: %s\n  \
-        BODY:    %s    \n", status, resp_headers, body);
-
-        // TODO: Depending on the response type, need respond to the client differently
+        // printf("Formulated the following response:\n \
+        // STATUS:  %s\n  \
+        // HEADERS: %s\n  \
+        // BODY:    %s    \n", status, resp_headers, body);
 
         printf("Sending the HTTP response back to the client...\n");
         int bytes_written = writen(client_fd, status, strlen(status));
@@ -290,9 +282,9 @@ void *process_incoming_request(void *args){
 
 static int parse_request(int client_fd, http_req *result){
     http_req tmp_req;
-    char method[MAX_METHOD_LEN];
-    char version[MAX_VER_LEN];
-    char uri[MAX_URI_LEN];
+    http_method method;
+    char version[MAX_VER_LEN] = {0};
+    char uri[MAX_URI_LEN] = {0};
 
     if(!result){
         printf("ERROR: Invalid result reference provided!\n");
@@ -311,14 +303,14 @@ static int parse_request(int client_fd, http_req *result){
         return -1;
     }
     
-    get_http_request_method(tmp_req, method);
+    get_http_request_method(tmp_req, &method);
     get_http_request_uri(tmp_req, uri);
     get_http_request_version(tmp_req, version);
 
     printf("Got the following request:\n \
     METHOD:   %s\n \
     URI:      %s\n \
-    HTTP VER: %s\n", method, uri, version);
+    HTTP VER: %s\n", http_method_strings[method], uri, version);
 
     *result = tmp_req;
     return 0;
@@ -337,7 +329,7 @@ static bool set_up_worker_pool(worker_data_t *worker_data){
     int rc;
 
     for(int i=0; i<NUM_WORKER_THREADS; i++){
-        if((rc = pthread_create(&tid, NULL, process_incoming_request, worker_data)) != 0){
+        if((rc = pthread_create(&tid, NULL, process_incoming_request, (void *)worker_data)) != 0){
             printf("ERROR: Something went wrong creating one of the worker threads... got rc %d\n", rc);
             return false;
         }

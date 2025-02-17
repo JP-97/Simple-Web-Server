@@ -12,8 +12,8 @@
  */
 
 
-#ifndef RIO_H
-#define RIO_H
+#ifndef _RIO
+#define _RIO
 
 #include <stddef.h>
 #include <sys/types.h>

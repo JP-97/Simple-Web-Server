@@ -1,2 +1,2 @@
 # Simple-Web-Server
-A Simple C-Based HTTP Client and Server
+A fully compliant C-Based HTTP 1.0 Server
