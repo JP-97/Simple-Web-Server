@@ -9,8 +9,8 @@
 #include <sys/socket.h>
 #include <semaphore.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include "command_line.h"
-#include "stdbool.h"
 #include "rio.h"
 #include "http.h"
 #include "bbuf.h"
@@ -24,7 +24,6 @@
 typedef struct _worker_data_t {
     bbuf_t bbuf;
 } worker_data_t;
-
 
 // TODO: Lets create something cool for signal handling where if 
 // one of the worker threads runs into a problem a signal is sent up to a monitor thread (main thread?)
@@ -48,6 +47,9 @@ static int bind_server_port(int server_port, int *svr_fd, char *server_ip);
 static int parse_request(int client_fd, http_req *result);
 void *process_incoming_request(void *args);
 
+char server_root[MAX_SERVER_ROOT_LEN];
+
+
 /**
  * @brief Spawn the server's main loop using provided CLI inputs.
  * 
@@ -64,6 +66,14 @@ static void run_server(struct cli *cli_in){
     socklen_t client_con_size;
     worker_data_t worker_data;
 
+    if(!cli_in){
+        printf("ERROR: Failed in initializing internal data structures!\n");
+        return;
+    }
+
+    printf("Initializing server with root directory: %s\n", cli_in->server_root);
+    strcpy(server_root, cli_in->server_root);
+
     // Set up bounded buffer and worker pool
     bbuf_t bbuf = bbuf_init();
 
@@ -71,13 +81,13 @@ static void run_server(struct cli *cli_in){
         exit(EXIT_FAILURE);
     }
 
-    worker_data.bbuf = bbuf;
-
     // Note: All worker threads are initialized with same
     // bbuf since the buffer is specifically built to operate with
     // multiple users and synchronizes the access internally.
     // worker_data can be stored on the stack because this function
     // survives for the lifeftime of the program.
+    worker_data.bbuf = bbuf;
+
     if(!set_up_worker_pool(&worker_data)){
         exit(EXIT_FAILURE);
     }
@@ -212,8 +222,10 @@ void *process_incoming_request(void *args){
     char status[MAX_RESP_STATUS_LEN];
     char resp_headers[MAX_RESP_HEADERS_LEN];
     char body[MAX_RESP_BODY_LEN];
+    size_t body_size;
     http_req request;
     http_resp response;
+    int bytes_written;
 
     pthread_detach(pthread_self());
 
@@ -247,32 +259,29 @@ void *process_incoming_request(void *args){
         get_http_response_status(response, status, MAX_RESP_STATUS_LEN);
         get_http_response_headers(response, resp_headers, MAX_RESP_HEADERS_LEN);
         get_http_response_body(response, body, MAX_RESP_BODY_LEN);
-
-        // printf("Formulated the following response:\n \
-        // STATUS:  %s\n  \
-        // HEADERS: %s\n  \
-        // BODY:    %s    \n", status, resp_headers, body);
+        get_http_response_body_size(response, &body_size);
 
         printf("Sending the HTTP response back to the client...\n");
-        int bytes_written = writen(client_fd, status, strlen(status));
+        bytes_written = writen(client_fd, status, strlen(status));
+        
         if(bytes_written == -1){
             exit(1);
         }
 
         bytes_written = writen(client_fd, resp_headers, strlen(resp_headers));
+        
         if(bytes_written == -1){
             exit(1);
         }
 
-        bytes_written = writen(client_fd, body, strlen(body));
+        bytes_written = writen(client_fd, body, body_size);
+        
         if(bytes_written == -1){
             exit(1);
         }
         
-        destroy_http_response(response);
-        response = NULL;
-        destroy_http_request(request);
-        request = NULL;
+        destroy_http_response(&response);
+        destroy_http_request(&request);
         close(client_fd);
     }
 
@@ -358,12 +367,11 @@ static void set_up_signal_handlers(){
 
 
 int main(int argc, char *argv[]){
-    struct cli *cli_in;
+    struct cli *cli_in = calloc(1, sizeof(struct cli));
 
     set_up_signal_handlers();
-    parse_cli(argc, argv, &cli_in);
 
-    if(!cli_in){
+    if(!parse_cli(argc, argv, cli_in)){
        return EXIT_FAILURE;
     }
 

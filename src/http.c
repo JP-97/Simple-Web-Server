@@ -27,6 +27,7 @@ static void validate_http_version(http_req request_to_process, http_resp respons
 static void process_requested_ressource(http_req request_to_process, http_resp response);
 static void precheck_request(http_req request_to_process, http_resp response);
 static void get_html_content_for_ressource(http_req request, http_resp response);
+static int get_ressource_content_type(http_req request, http_resp response);
 static void parse_http_method(const char *in_buf, http_req request);
 static void parse_http_uri(const char *in_buf, http_req request);
 static void parse_http_version(const char *in_buf, size_t in_buf_len, http_req request);
@@ -106,10 +107,11 @@ int get_http_request_version(http_req req, char *version){
 }
 
 
-void destroy_http_request(http_req request_to_destroy){
+void destroy_http_request(http_req *request_to_destroy){
     if(!request_to_destroy) return; // Nothing to free...
 
-    free(request_to_destroy);
+    free(*request_to_destroy);
+    *request_to_destroy = NULL;
     return;
 } 
 
@@ -125,10 +127,11 @@ http_resp init_http_response(){
 }
 
 
-void destroy_http_response(http_resp response_to_destroy){
+void destroy_http_response(http_resp *response_to_destroy){
     if(!response_to_destroy) return; // Nothing to free...
 
-    free(response_to_destroy);
+    free(*response_to_destroy);
+    *response_to_destroy = NULL;
     return;
 }
 
@@ -146,7 +149,14 @@ int get_http_response_body(http_resp response, char *body, size_t max_body_len){
     if(!response || !body)
         return -1;
 
-    strncpy(body, response->body, max_body_len);
+    memcpy(body, response->body, max_body_len);
+    return 0;
+}
+
+int get_http_response_body_size(http_resp response, size_t *body_size){
+    if(!response || !body_size) return -1;
+
+    *body_size = (size_t) response->_content_len;
     return 0;
 }
 
@@ -276,6 +286,10 @@ static void http_resp_status_code_to_str(int status_code, char *buff){
             strncpy(buff, "Bad Request", 30);
             break;
 
+        case UNAUTHORIZED:
+            strncpy(buff, "Unauthorized", 30);
+            break;
+
         case FILE_NOT_FOUND:   
             strncpy(buff, "Not Found", 30);
             break;
@@ -307,6 +321,7 @@ static void http_resp_status_code_to_str(int status_code, char *buff){
  */
 static int formulate_full_response(http_req request_to_process, http_resp response){
     char status_code_str[30];
+    char content_type[MAX_RES_TYPE_LEN];
 
     if(!response){
         printf("ERROR: Null response provided... returning without populating response\n");
@@ -320,16 +335,32 @@ static int formulate_full_response(http_req request_to_process, http_resp respon
     printf("DEBUG: Formulating Full HTTP response...\n");
 
     if(strlen(response->body) == 0 && response->_return_code == OK){
-        // Empty string means something went wrong getting ressource...
+        // Empty body means something went wrong getting ressource...
         response->_return_code = INTERNAL_ERROR;
     }
 
     http_resp_status_code_to_str(response->_return_code, status_code_str);
-
-
-    // Populate the HTTP response struct
+   
+    // Populate the HTTP response status line
+    // HTTP-Version Status-Code Reason-Phrase
     snprintf(response->status, MAX_RESP_STATUS_LEN, "HTTP/%.1f %d %s\r\n", SERVER_HTTP_VER, response->_return_code, status_code_str);
-    snprintf(response->headers, MAX_RESP_HEADERS_LEN, "Content-type: text/html\r\nContent-length: %ld\r\n\r\n", strlen(response->body));
+
+    // Populate headers
+    // TODO Need to clean this up - maybe a macro? 
+    
+    if(response->_return_code != OK || strlen(response->body) == 0){
+        // For a bad request where body is empty, we don't need headers
+        return 0;
+    }
+
+    if(get_ressource_content_type(request_to_process, response) != 0){
+        response->_return_code = INTERNAL_ERROR;
+        return 0;
+    }
+
+    snprintf(response->headers, MAX_RESP_HEADERS_LEN, "Content-length: %ld\r\nContent-type: %s\r\n\r\n", response->_content_len, response->_content_type);
+    
+    // snprintf(response->headers, MAX_RESP_HEADERS_LEN, "Content-type: %s\r\n\r\n", content_type);
 
     return 0;
 }
@@ -347,7 +378,6 @@ static int formulate_simple_response(http_req request_to_process, http_resp resp
     printf("DEBUG: Formulating Simple HTTP response...\n");
     return 0;
 }
-
 
 
 /**
@@ -380,6 +410,7 @@ static void precheck_request(http_req request_to_process, http_resp response){
     }
 }
 
+
 static void validate_http_method(http_req request_to_process, http_resp response)
 {
     if(request_to_process->method == UNKNOWN){
@@ -398,37 +429,26 @@ static void validate_http_method(http_req request_to_process, http_resp response
 
 static void validate_http_uri(http_req request_to_process, http_resp response)
 {
-    // Eventually this should probably check against a list of predefined
-    // ressources that are determined at startup and then we can set some 
-    // early return codes like 404, etc.
+    snprintf(request_to_process->_ressource_abs_path,
+             MAX_SERVER_ROOT_LEN + MAX_URI_LEN,
+             "%s%s%s",
+             server_root_location,
+             request_to_process->_ressource_location,
+             strcmp(request_to_process->_ressource_name, "/") == 0 ? "/index.html" : request_to_process->_ressource_name);
+    
+    printf("Ressource full path: %s\n", request_to_process->_ressource_abs_path);
 
-    // TODO: For now this is hardcoded, but should be a created at runtime on server init
-    char ressource_abs_location[100];
-
-    const char *ressources[] = {
-        "/",
-        "/test.html"
-    };
-
-    for(int i=0; i<LEN(ressources); i++){
-        if(strcmp(ressources[i], request_to_process->_ressource_name) != 0){
-            continue;
-        }
-
-        // Ressource found in ressource list - validate we can access it
-        snprintf(ressource_abs_location, MAX_URI_LEN + strlen(RESSOURCE_ROOT), "%s%s%s", RESSOURCE_ROOT, request_to_process->_ressource_location, request_to_process->_ressource_name);
-        printf("Ressource full path: %s\n", ressource_abs_location);
-
-        if(access(ressource_abs_location, F_OK) != 0){
-            printf("ERROR: Could not access %s\n", ressource_abs_location);
-            response->_return_code = INTERNAL_ERROR;
-            return;
-        }
+    if(access(request_to_process->_ressource_abs_path, F_OK) != 0){
+        printf("ERROR: Could not access %s\n", request_to_process->_ressource_abs_path);
+        response->_return_code = FILE_NOT_FOUND;
         return;
     }
 
-    response->_return_code = 404;
-    return;
+    else if(access(request_to_process->_ressource_abs_path, R_OK) != 0){ // TODO: For now, only checking read permissions, but this will change when we add executables
+        printf("ERROR: Bad permissions for requested ressource %s\n", request_to_process->_ressource_abs_path);
+        response->_return_code = UNAUTHORIZED;
+        return;
+    }
 }
 
 
@@ -481,6 +501,12 @@ static void validate_http_version(http_req request_to_process, http_resp respons
 }
 
 
+/**
+ * @brief Read the contents of the requested ressource into the response's body buffer.
+ * 
+ * @param request Request to process.
+ * @param response Response being updated.
+ */
 static void get_html_content_for_ressource(http_req request, http_resp response)
 {
     if(!request || !response){
@@ -488,35 +514,72 @@ static void get_html_content_for_ressource(http_req request, http_resp response)
         return;
     }
 
-    char ressource_abs_path[200];
-    char ressource_to_get[MAX_RESSOURCE_LEN];
+    rio_t ressource_handle = NULL;
 
-    if(strncmp(request->_ressource_name, "/", MAX_RESSOURCE_LEN) == 0){
-        strncpy(ressource_to_get, "index.html", MAX_RESSOURCE_LEN);
-    }
-    else{
-        strncpy(ressource_to_get, request->_ressource_name, MAX_RESSOURCE_LEN);
-    }
-        
-    snprintf(ressource_abs_path, 200, "%s%s%s", RESSOURCE_ROOT, request->_ressource_location, ressource_to_get);
-    
-    printf("Fetching contents for %s\n", ressource_abs_path);
-    int ressource_fd = open(ressource_abs_path, O_RDONLY);
+    printf("Fetching contents for %s\n", request->_ressource_abs_path);
+    int ressource_fd = open(request->_ressource_abs_path, O_RDONLY);
 
     if(!ressource_fd){
-        printf("ERROR: Failed to open file descriptor for requested ressource %s\n", ressource_abs_path);
-        return;
+        printf("ERROR: Failed to open file descriptor for requested ressource %s\n", request->_ressource_abs_path);
+        goto clean_up;
     }
 
-    int was_read = read(ressource_fd, response->body, MAX_HTML_CONTENT_SIZE);
-
-    if(was_read == -1){
-        printf("ERROR: Failed to fetch html contents for %s\n", ressource_abs_path);
-        return;
+    ressource_handle = readn_b_init(ressource_fd);
+    ssize_t num_bytes_read = readn_b(ressource_handle, response->body, MAX_RESP_BODY_LEN);
+    
+    if(num_bytes_read == -1){
+        printf("ERROR: Failed to fetch html contents for %s\n", request->_ressource_abs_path);
     }
 
-    close(ressource_fd);
+    response->_content_len = num_bytes_read;
+
+    clean_up:
+        if(ressource_handle) readn_b_destroy(&ressource_handle);
+        close(ressource_fd);
+    
+    return;
 }
+
+
+/**
+ * @brief Provide the content type needed in the response based on the provided request.
+ * 
+ * @param request request which contains ressource absolute path.
+ * @param ressource_type_result buffer to store the ressource type.
+ */
+static int get_ressource_content_type(http_req request, http_resp response)
+{
+    ext_map recognized_ext_mappings[NUM_RECOGNIZED_EXT_MAPPINGS] = {{.extension = ".html",
+                                                                     .content_type = "text/html"},
+                                                                     {.extension = ".jpeg",
+                                                                      .content_type = "image/jpeg"}};
+
+    const char *default_content_type = "text/plain";
+
+
+    if(!request || !response){
+        printf("ERROR: Invalid input for getting ressource type!\n");
+        return -1;
+    }
+
+    char *requested_ressource_extension_start = strstr(request->_ressource_abs_path, ".");
+
+    for(int i = 0; i < NUM_RECOGNIZED_EXT_MAPPINGS; i++){
+
+        if(strncmp(requested_ressource_extension_start, recognized_ext_mappings[i].extension, MAX_RES_EXT_LEN) !=0){
+            continue;    
+        }
+
+        strncpy(response->_content_type, recognized_ext_mappings[i].content_type, MAX_RES_TYPE_LEN-1);
+        printf("%s is of Content-Type: %s\n", request->_ressource_abs_path, recognized_ext_mappings[i].content_type);
+        return 0;
+    }
+
+    printf("WARNING: Could not determine content type for requested ressource: %s... using default\n", request->_ressource_abs_path);
+    strncpy(response->_content_type, default_content_type, MAX_RES_TYPE_LEN -1);
+    return 0;
+}
+
 
 
 static void parse_http_method(const char *in_buf, http_req request)

@@ -6,22 +6,23 @@
  *
  */
 
-
 #ifndef _HTTP
 #define _HTTP
 
 #include <stdlib.h>
+#include "command_line.h"
 
 #define MAX_METHOD_LEN        5
 #define MAX_URL_LEN           50
 #define MAX_RESSOURCE_LEN     50
 #define MAX_URI_LEN           MAX_URL_LEN + MAX_RESSOURCE_LEN
 #define MAX_VER_LEN           4  // 1.0, 1.1, etc. 
-#define MAX_HTML_CONTENT_SIZE 250
+#define MAX_RES_EXT_LEN       10
+#define MAX_RES_TYPE_LEN      30
 
 #define MAX_RESP_STATUS_LEN  60
 #define MAX_RESP_HEADERS_LEN 200
-#define MAX_RESP_BODY_LEN    8192
+#define MAX_RESP_BODY_LEN    500000
 
 #define ENUM_GEN(ENUM) ENUM,
 #define STRING_GEN(STRING) #STRING,
@@ -47,7 +48,8 @@ typedef struct _http_resp *http_resp;
 
 typedef enum _http_return_code {
     OK              = 200,
-    BAD_REQUEST     = 400, 
+    BAD_REQUEST     = 400,
+    UNAUTHORIZED    = 401, 
     FILE_NOT_FOUND  = 404,
     INTERNAL_ERROR  = 500,
     NOT_IMPLEMENTED = 501,
@@ -66,7 +68,6 @@ typedef enum _http_method {
 } http_method;
 
 extern char *http_method_strings[];
-
 
 /**
  * @brief Parse http request on client_fd.
@@ -87,13 +88,13 @@ http_resp init_http_response();
 /**
  * @brief Free all memory allocated to provided http_req object.
 */
-void destroy_http_request(http_req request_to_destroy);
+void destroy_http_request(http_req *request_to_destroy);
 
 
 /**
  * @brief Free all memory allocated to provided http_req object.
 */
-void destroy_http_response(http_resp response_to_destroy);
+void destroy_http_response(http_resp *response_to_destroy);
 
 
 /**
@@ -153,6 +154,16 @@ int get_http_response_status(http_resp response, char *status, size_t max_status
  * @return int 0 if the body is successfully retrieved, otherwise -1
  */
 int get_http_response_body(http_resp response, char *body, size_t max_body_len);
+
+
+/**
+ * @brief Get the http response body size (bytes)
+ * 
+ * @param response the response from which to retrieve the body size
+ * @param body_size reference to store the http response body size
+ * @return int 0 if the body size is successfully retrieved, otherwise -1
+ */
+int get_http_response_body_size(http_resp response, size_t *body_size);
 
 
 /**

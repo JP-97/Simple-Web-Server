@@ -10,15 +10,9 @@ static sem_t *init_unamed_semaphore(unsigned int initial_value);
 
 
 bbuf_t bbuf_init(){
-    bbuf_t tmp_buff = (bbuf_t) malloc(sizeof(struct _bbuf));
+    bbuf_t tmp_buff = (bbuf_t) calloc(1, sizeof(struct _bbuf));
 
     if(!tmp_buff){
-        perror("ERROR: Failed to initialize bounded buffer\n");
-        return NULL;
-    }
-
-    tmp_buff->buff = (int *) calloc(BBUF_SIZE, sizeof(int));
-    if(!tmp_buff->buff){
         perror("ERROR: Failed to initialize bounded buffer\n");
         return NULL;
     }
@@ -53,7 +47,6 @@ bbuf_t bbuf_init(){
 }
 
 void bbuf_destroy(bbuf_t bbuf){    
-    free(bbuf->buff);
     free(bbuf->mutex);
     free(bbuf->slots);
     free(bbuf->items);

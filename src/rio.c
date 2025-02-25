@@ -9,20 +9,19 @@
 #define EXIT_FAILURE_RIO -1
 
 
-static ssize_t read_b(rio_t rp, void *userbuf, size_t num_to_read);
+// Intenal helper used amongst public APIs
+static ssize_t read_b(rio_t rp, char *userbuf, size_t num_to_read);
 
 
 /**
- * @brief structure to manage buffered reads associated to fd.
- *  
  * This struct is for internal use only.
- * 
  */
 struct rio_struct {
-    int fd;                     /**< File descriptor to read from.>*/
+    int fd;                     /**< File descriptor to read from. */
     ssize_t remaining;          /**< Remanining number of bytes in internal buffer. */
     char *rio_bufptr;           /**< Pointer to next byte to be read from internal buffer. */
     char rio_buf[RIO_BUFFSIZE]; /**< Internal buffer. */
+    ssize_t total_bytes_copied; /**< Total number of bytes copied from internal buffer to user buffer */
 };
 
 
@@ -34,6 +33,7 @@ rio_t readn_b_init(int fd){
     resp->fd = fd;
     resp->remaining = 0;
     resp->rio_bufptr = resp->rio_buf;
+    resp->total_bytes_copied = 0;
     
     return resp;
 }
@@ -41,7 +41,7 @@ rio_t readn_b_init(int fd){
 
 void readn_b_destroy(rio_t *instance){
     // Return if already NULL
-    if (!(instance)) return;
+    if (!instance) return;
     
     free(*instance);
     *instance = NULL;
@@ -49,9 +49,10 @@ void readn_b_destroy(rio_t *instance){
 }
 
 
-ssize_t readn_b(rio_t rp, void *userbuf, size_t num_bytes){
+ssize_t readn_b(rio_t rp, char *userbuf, size_t num_bytes){
     ssize_t bytes_copied;
     size_t bytes_left_to_copy = num_bytes;
+    rp->total_bytes_copied = 0;
 
     while (bytes_left_to_copy > 0){
         
@@ -66,6 +67,7 @@ ssize_t readn_b(rio_t rp, void *userbuf, size_t num_bytes){
         }
 
         bytes_left_to_copy -= bytes_copied;
+        rp->total_bytes_copied += bytes_copied;
     }
 
     return num_bytes - bytes_left_to_copy;
@@ -143,18 +145,12 @@ ssize_t writen(int fd, void *userbuf, size_t num_bytes){
 
 
 /**
- * @brief Return number of bytes read, 0 on EOF and -1 on failure.
- * 
  * This function is just a buffered version of read(). It reads max
  * amount of data into internal rio_buf and then copies required amount
  * to userbuf. It can act as a direct substitute for standard read and
  * will save on number of system calls.
- * 
- * @param rp pointer to rio_t struct
- * @param userbuf dst buffer to copy data to
- * @param num_to_read number of bytes to read into dst buffer
  */
-static ssize_t read_b(rio_t rp, void *userbuf, size_t num_to_read){
+static ssize_t read_b(rio_t rp, char *userbuf, size_t num_to_read){
     size_t num_copied;
 
     // Refill the rio_buf if it's empty
@@ -173,7 +169,7 @@ static ssize_t read_b(rio_t rp, void *userbuf, size_t num_to_read){
 
     // Copy data from rio_buf to userbuf
     num_copied = min(num_to_read, rp->remaining); // It's likely we were able to copy more to internal buf than required
-    memcpy(userbuf, rp->rio_bufptr, num_copied);
+    memcpy(userbuf + rp->total_bytes_copied, rp->rio_bufptr, num_copied);
     rp->remaining -= num_copied;
     rp->rio_bufptr += num_copied;
 
