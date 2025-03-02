@@ -1,6 +1,7 @@
 #ifndef _HTTP_PRIVATE
 #define _HTTP_PRIVATE
 
+#include <sys/stat.h>
 #include "http.h"
 
 #define NUM_RECOGNIZED_EXT_MAPPINGS 5
@@ -19,11 +20,11 @@ struct _http_req{
 struct _http_resp {
     char status[MAX_RESP_STATUS_LEN];
     char headers[MAX_RESP_HEADERS_LEN];
-    char body[MAX_RESP_BODY_LEN];
+    int  ressource_fd;
     http_response_type response_type;
-    
+
     // Internal use only
-    uint32_t         _content_len;
+    off_t            _content_len;
     char             _content_type[MAX_RES_TYPE_LEN];
     http_return_code _return_code;
 };

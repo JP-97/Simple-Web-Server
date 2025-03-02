@@ -26,7 +26,7 @@ static void validate_http_uri(http_req request_to_process, http_resp response);
 static void validate_http_version(http_req request_to_process, http_resp response);
 static void process_requested_ressource(http_req request_to_process, http_resp response);
 static void precheck_request(http_req request_to_process, http_resp response);
-static void get_html_content_for_ressource(http_req request, http_resp response);
+static void get_ressource_size(http_req request, http_resp response);
 static int get_ressource_content_type(http_req request, http_resp response);
 static void parse_http_method(const char *in_buf, http_req request);
 static void parse_http_uri(const char *in_buf, http_req request);
@@ -130,6 +130,8 @@ http_resp init_http_response(){
 void destroy_http_response(http_resp *response_to_destroy){
     if(!response_to_destroy) return; // Nothing to free...
 
+    close((*response_to_destroy)->ressource_fd);
+
     free(*response_to_destroy);
     *response_to_destroy = NULL;
     return;
@@ -145,18 +147,18 @@ int get_http_response_status(http_resp response, char *status, size_t max_status
 }
 
 
-int get_http_response_body(http_resp response, char *body, size_t max_body_len){
-    if(!response || !body)
-        return -1;
+int get_http_response_content_size(http_resp response, off_t *content_size){
+    if(!response || !content_size) return -1;
 
-    memcpy(body, response->body, max_body_len);
+    *content_size = response->_content_len;
     return 0;
 }
 
-int get_http_response_body_size(http_resp response, size_t *body_size){
-    if(!response || !body_size) return -1;
 
-    *body_size = (size_t) response->_content_len;
+int get_http_response_ressource_fd(http_resp response, int *ressource_fd){
+    if(!response || !ressource_fd) return -1;
+
+    *ressource_fd = response->ressource_fd;
     return 0;
 }
 
@@ -209,7 +211,7 @@ http_resp get_http_response_from_request(http_req request_to_process){
     }
 
     // Process the ressource
-    get_html_content_for_ressource(request_to_process, response);
+    get_ressource_size(request_to_process, response);
 
     // Set status last after we've had a chance to process ressource
 
@@ -334,11 +336,6 @@ static int formulate_full_response(http_req request_to_process, http_resp respon
     
     printf("DEBUG: Formulating Full HTTP response...\n");
 
-    if(strlen(response->body) == 0 && response->_return_code == OK){
-        // Empty body means something went wrong getting ressource...
-        response->_return_code = INTERNAL_ERROR;
-    }
-
     http_resp_status_code_to_str(response->_return_code, status_code_str);
    
     // Populate the HTTP response status line
@@ -348,8 +345,8 @@ static int formulate_full_response(http_req request_to_process, http_resp respon
     // Populate headers
     // TODO Need to clean this up - maybe a macro? 
     
-    if(response->_return_code != OK || strlen(response->body) == 0){
-        // For a bad request where body is empty, we don't need headers
+    if(response->_return_code != OK){
+        // For a bad request we don't need headers
         return 0;
     }
 
@@ -360,8 +357,6 @@ static int formulate_full_response(http_req request_to_process, http_resp respon
 
     snprintf(response->headers, MAX_RESP_HEADERS_LEN, "Content-length: %ld\r\nContent-type: %s\r\n\r\n", response->_content_len, response->_content_type);
     
-    // snprintf(response->headers, MAX_RESP_HEADERS_LEN, "Content-type: %s\r\n\r\n", content_type);
-
     return 0;
 }
 
@@ -502,42 +497,43 @@ static void validate_http_version(http_req request_to_process, http_resp respons
 
 
 /**
- * @brief Read the contents of the requested ressource into the response's body buffer.
+ * @brief Populate the response with ressource's fd for reading and ressource size.
  * 
  * @param request Request to process.
  * @param response Response being updated.
  */
-static void get_html_content_for_ressource(http_req request, http_resp response)
+static void get_ressource_size(http_req request, http_resp response)
 {
     if(!request || !response){
         printf("ERROR: Invalid buffer reference provided for fetching html content.\n");
         return;
     }
 
-    rio_t ressource_handle = NULL;
+    struct stat ressource_info;
+    int ressource_fd;
+    int stat_result;
 
-    printf("Fetching contents for %s\n", request->_ressource_abs_path);
-    int ressource_fd = open(request->_ressource_abs_path, O_RDONLY);
+    ressource_fd = open(request->_ressource_abs_path, O_RDONLY);
 
     if(!ressource_fd){
         printf("ERROR: Failed to open file descriptor for requested ressource %s\n", request->_ressource_abs_path);
         goto clean_up;
     }
 
-    ressource_handle = readn_b_init(ressource_fd);
-    ssize_t num_bytes_read = readn_b(ressource_handle, response->body, MAX_RESP_BODY_LEN);
+    stat_result = fstat(ressource_fd, &ressource_info); 
     
-    if(num_bytes_read == -1){
-        printf("ERROR: Failed to fetch html contents for %s\n", request->_ressource_abs_path);
+    if(stat_result == -1){
+        printf("ERROR: Failed to get %s metadata\n", request->_ressource_abs_path);
+        goto clean_up;
     }
 
-    response->_content_len = num_bytes_read;
+    response->ressource_fd = ressource_fd;
+    response->_content_len = ressource_info.st_size;
+
+    return;
 
     clean_up:
-        if(ressource_handle) readn_b_destroy(&ressource_handle);
         close(ressource_fd);
-    
-    return;
 }
 
 
@@ -551,8 +547,12 @@ static int get_ressource_content_type(http_req request, http_resp response)
 {
     ext_map recognized_ext_mappings[NUM_RECOGNIZED_EXT_MAPPINGS] = {{.extension = ".html",
                                                                      .content_type = "text/html"},
+                                                                    
                                                                      {.extension = ".jpeg",
-                                                                      .content_type = "image/jpeg"}};
+                                                                     .content_type = "image/jpeg"},
+                                                                    
+                                                                     {.extension = ".jpg",
+                                                                     .content_type = "image/jpeg"}};
 
     const char *default_content_type = "text/plain";
 
