@@ -21,8 +21,7 @@
 #define MAX_RES_TYPE_LEN      30
 
 #define MAX_RESP_STATUS_LEN  60
-#define MAX_RESP_HEADERS_LEN 200
-#define MAX_RESP_BODY_LEN    500000
+#define MAX_RESP_HEADERS_LEN 500
 
 #define ENUM_GEN(ENUM) ENUM,
 #define STRING_GEN(STRING) #STRING,
@@ -146,24 +145,23 @@ int get_http_response_status(http_resp response, char *status, size_t max_status
 
 
 /**
- * @brief Get the http response body
+ * @brief Get the http response content size (bytes)
  * 
- * @param response the response from which to retrieve the body
- * @param body buffer to store the body
- * @param max_body_len max length of body to copy into provided buffer
- * @return int 0 if the body is successfully retrieved, otherwise -1
+ * @param response the response from which to retrieve the content size
+ * @param content_size reference to store the http response content size
+ * @return int 0 if the content size is successfully retrieved, otherwise -1
  */
-int get_http_response_body(http_resp response, char *body, size_t max_body_len);
+int get_http_response_content_size(http_resp response, off_t *content_size);
 
 
 /**
- * @brief Get the http response body size (bytes)
+ * @brief Get the http response resssource fd.
  * 
- * @param response the response from which to retrieve the body size
- * @param body_size reference to store the http response body size
- * @return int 0 if the body size is successfully retrieved, otherwise -1
+ * @param response the response from which to retrieve the ressource fd
+ * @param ressource_fd reference to store the ressource fd
+ * @return int 0 if the fd was retrieved successfully, otherwise -1
  */
-int get_http_response_body_size(http_resp response, size_t *body_size);
+int get_http_response_ressource_fd(http_resp response, int *ressource_fd);
 
 
 /**

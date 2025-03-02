@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <sys/sendfile.h>
 #include "rio.h"
 
 #define EXIT_FAILURE_RIO -1
@@ -111,8 +112,7 @@ ssize_t readline_b(rio_t rp, void *userbuf, size_t maxlen){
 }
 
 
-
-ssize_t writen(int fd, void *userbuf, size_t num_bytes){
+ssize_t writen_b(int fd, void *userbuf, size_t num_bytes){
     int max_retries = 5, retry_num = 0, bytes_left = num_bytes;
     ssize_t bytes_written = 0;
     char *bufp = (char *)userbuf;
@@ -140,6 +140,38 @@ ssize_t writen(int fd, void *userbuf, size_t num_bytes){
     }
 
     printf("Successfully wrote %ldB to fd %d...\n", bytes_written, fd);
+    return EXIT_SUCCESS;
+}
+
+
+ssize_t writen(int out_fd, int in_fd, size_t num_bytes){
+    int max_retries = 5;
+    int retry_num = 0;
+    size_t bytes_left = num_bytes;
+    ssize_t bytes_written = 0;
+    
+    // Retry the write until num_bytes has been transfered to fd
+    // or we encounter write sys call explicitly fails
+    while (bytes_left > 0 && retry_num < max_retries){
+        bytes_written = sendfile(out_fd, in_fd, NULL, num_bytes);
+
+        if (bytes_written == -1){
+
+            if (errno == EINTR){
+                printf("Encountered signal %d, retrying...\n", errno);
+                bytes_written = 0;
+                retry_num++;
+                continue;
+            }
+
+            printf("ERROR: Failed to write %ldB to fd %d...\n", num_bytes, out_fd);
+            return EXIT_FAILURE_RIO;
+        }
+
+        bytes_left -= bytes_written;
+    }
+
+    printf("Successfully wrote %ldB to fd %d...\n", bytes_written, out_fd);
     return EXIT_SUCCESS;
 }
 

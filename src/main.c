@@ -219,13 +219,13 @@ static int bind_server_port(int server_port, int *svr_fd, char *server_ip){
  */
 void *process_incoming_request(void *args){
     int client_fd;
+    int ressource_fd;
     char status[MAX_RESP_STATUS_LEN];
     char resp_headers[MAX_RESP_HEADERS_LEN];
-    char body[MAX_RESP_BODY_LEN];
-    size_t body_size;
+    off_t content_size;
     http_req request;
     http_resp response;
-    int bytes_written;
+    ssize_t bytes_written;
 
     pthread_detach(pthread_self());
 
@@ -258,28 +258,33 @@ void *process_incoming_request(void *args){
         // Log the response for debugging...
         get_http_response_status(response, status, MAX_RESP_STATUS_LEN);
         get_http_response_headers(response, resp_headers, MAX_RESP_HEADERS_LEN);
-        get_http_response_body(response, body, MAX_RESP_BODY_LEN);
-        get_http_response_body_size(response, &body_size);
+        get_http_response_content_size(response, &content_size);
+        get_http_response_ressource_fd(response, &ressource_fd);
+
 
         printf("Sending the HTTP response back to the client...\n");
-        bytes_written = writen(client_fd, status, strlen(status));
+        bytes_written = writen_b(client_fd, status, strlen(status));
         
         if(bytes_written == -1){
             exit(1);
         }
 
-        bytes_written = writen(client_fd, resp_headers, strlen(resp_headers));
+        bytes_written = writen_b(client_fd, resp_headers, strlen(resp_headers));
         
         if(bytes_written == -1){
             exit(1);
+        }
+        
+        if(content_size != 0){
+            // Only try to write from reessource fd if there is content to read
+            // content size will be 0 in case of errors
+            bytes_written = writen(client_fd, ressource_fd, content_size);
+            
+            if(bytes_written == -1){
+                exit(1);
+            }
         }
 
-        bytes_written = writen(client_fd, body, body_size);
-        
-        if(bytes_written == -1){
-            exit(1);
-        }
-        
         destroy_http_response(&response);
         destroy_http_request(&request);
         close(client_fd);

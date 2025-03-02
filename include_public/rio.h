@@ -64,13 +64,24 @@ ssize_t readline_b(rio_t rp, void *userbuf, size_t maxlen);
 
 
 /**
- * @brief Attempt to write num_bytes from userbuf to fd.
+ * @brief Attempt to write num_bytes from a userbuf to fd.
  * 
  * @param fd File descriptor to write to.
  * @param userbuf Pointer to buffer containing contents to write.
  * @param num_bytes Number of bytes to write from userbuf.
  * @return 0 if everything was written, otherwise -1.
  */
-ssize_t writen(int fd, void *userbuf, size_t num_bytes);
+ssize_t writen_b(int fd, void *userbuf, size_t num_bytes);
+
+
+/**
+ * @brief Attempt to write num_bytes from in_fd to out_fd.
+ * 
+ * @param out_fd File descriptor to write to.
+ * @param in_fd File descriptor to read from.
+ * @param num_bytes Number of bytes to write between fds.
+ * @return 0 if everything was written, otherwise -1.
+ */
+ssize_t writen(int out_fd, int in_fd, size_t num_bytes);
 
 #endif
