@@ -49,7 +49,7 @@ void readn_b_destroy(rio_t *instance);
  * @param num_bytes Number of Bytes to try and read.
  * @return Number of Bytes read into userbuf, 0 for EOF and -1 for error.
  */
-ssize_t readn_b(rio_t rp, void *userbuf, size_t num_bytes);
+ssize_t readn_b(rio_t rp, char *userbuf, size_t num_bytes);
 
 
 /**
