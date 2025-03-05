@@ -16,7 +16,6 @@
 #include "bbuf.h"
 
 #define BUFF_SIZE 100 // TODO need to optimize this
-#define MAX_IN_LEN 100
 #define MAX_BBUFF_LEN 25
 #define MAX_SERVER_HOSTNAME_LEN 25
 #define NUM_WORKER_THREADS 5
@@ -310,7 +309,7 @@ static int parse_request(int client_fd, http_req *result){
         return -1;
     }
 
-    tmp_req = init_http_request(client_fd, MAX_IN_LEN);
+    tmp_req = init_http_request(client_fd);
     
     if(!tmp_req){
         printf("ERROR: failed to parse request!\n");

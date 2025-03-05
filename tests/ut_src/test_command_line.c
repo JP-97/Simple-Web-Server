@@ -29,16 +29,6 @@ static int teardown(void **state) {
     return 0;
 }
 
-// Mocks
-
-int __wrap_access(const char * __name, int __type){
-    check_expected_ptr(__name);
-    check_expected(__type);
-
-    return mock_type(int);
-}
-
-
 static void test_invalid_num_arguments(void **state) {
     command_line_t *cmd_line = *state;
 
@@ -109,9 +99,9 @@ static void test_non_existent_server_root(void **state){
     // Set up mock to reflect bad ressource
     // Expectation is the we check existence for file prior to other checks
     // So don't need to stage multiple invocations in this case
+    expect_string(__wrap_access, name, "non_existent_ressource");
+    expect_value(__wrap_access, type, F_OK);
     will_return(__wrap_access, -1);
-    expect_string(__wrap_access, __name, "non_existent_ressource");
-    expect_value(__wrap_access, __type, F_OK);
 
     bool result = parse_cli(cmd_line->argc, cmd_line->argv, &(cmd_line->test_cli));
     
