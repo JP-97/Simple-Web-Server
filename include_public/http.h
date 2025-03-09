@@ -73,7 +73,7 @@ extern char *http_method_strings[];
  * 
  * @return http_req handler for request object.
 */
-http_req init_http_request(int client_fd, size_t max_req_len);
+http_req init_http_request(int client_fd);
 
 
 /**

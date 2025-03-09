@@ -38,11 +38,12 @@ char *http_method_strings[] = {FOREACH_HTTP_METHOD(STRING_GEN)};
 
 // REQUEST //
 
-http_req init_http_request(int client_fd, size_t max_req_len){
-    char in_buf[max_req_len];
-    http_req result;
+http_req init_http_request(int client_fd){
+    int num_spaces_in_request_line = 3;
+    int status_line_len = MAX_METHOD_LEN+MAX_URI_LEN+MAX_VER_LEN+num_spaces_in_request_line;   
+    char in_buf[status_line_len];
     
-    alloc_http_request(&result);
+    http_req result = alloc_http_request();
 
     if(!result){
         return result;
@@ -55,14 +56,14 @@ http_req init_http_request(int client_fd, size_t max_req_len){
 
     // Read request from client fd
     rio_t in_parser = readn_b_init(client_fd);
-    memset(in_buf, 0, max_req_len);
+    memset(in_buf, 0, status_line_len);
 
-    (void) readline_b(in_parser, in_buf, max_req_len-1);
+    (void) readline_b(in_parser, in_buf, status_line_len-1);
     readn_b_destroy(&in_parser);
 
     parse_http_method(in_buf, result);
     parse_http_uri(in_buf, result);
-    parse_http_version(in_buf, max_req_len, result);
+    parse_http_version(in_buf, status_line_len, result);
 
     return result;
 }
@@ -236,18 +237,9 @@ http_resp get_http_response_from_request(http_req request_to_process){
 
 // HELPERS //
 
-
-void alloc_http_request(http_req *result){
-    if(!result){
-        printf("ERROR: Bad http_req reference provided\n");
-        return;
-    }
-
+http_req alloc_http_request(){
     http_req tmp = (http_req) calloc(1, sizeof(struct _http_req));
-    
-    *result = tmp ? tmp : NULL;
-    
-    return;
+    return tmp;
 }
 
 /**
@@ -323,7 +315,6 @@ static void http_resp_status_code_to_str(int status_code, char *buff){
  */
 static int formulate_full_response(http_req request_to_process, http_resp response){
     char status_code_str[30];
-    char content_type[MAX_RES_TYPE_LEN];
 
     if(!response){
         printf("ERROR: Null response provided... returning without populating response\n");
@@ -516,7 +507,7 @@ static void get_ressource_size(http_req request, http_resp response)
     ressource_fd = open(request->_ressource_abs_path, O_RDONLY);
 
     if(!ressource_fd){
-        printf("ERROR: Failed to open file descriptor for requested ressource %s\n", request->_ressource_abs_path);
+        printf("ERROR: Failed to get file descriptor for requested ressource %s\n", request->_ressource_abs_path);
         goto clean_up;
     }
 
@@ -684,7 +675,6 @@ static void parse_http_version(const char *in_buf, size_t in_buf_len, http_req r
     }
 
     int version_match_len = get_match_object_len(re_request_version_result[1]);
-    printf("%d\n", version_match_len);
     version_match_len = version_match_len > MAX_VER_LEN ? MAX_VER_LEN : version_match_len;
 
     strncpy(request->version, in_buf + re_request_version_result[1].rm_so, version_match_len);

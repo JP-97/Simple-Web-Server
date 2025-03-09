@@ -50,7 +50,6 @@ void bbuf_destroy(bbuf_t bbuf){
     free(bbuf->mutex);
     free(bbuf->slots);
     free(bbuf->items);
-
     free(bbuf);
     return;
 }
