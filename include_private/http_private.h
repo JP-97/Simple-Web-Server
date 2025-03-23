@@ -34,6 +34,14 @@ typedef struct ext_map {
     char *content_type;
 } ext_map;
 
-void alloc_http_request(http_req *result);
+/**
+ * @brief Allocate http_req without need of a client fd. This
+ *        helps facilitate dependency injection during testing since
+ *        we can create a request and manually set attributes without
+ *        needing to mock out all syscalls.
+ * 
+ * @param result initialized http_req reference. NULL on error.
+ */
+http_req alloc_http_request();
 
 #endif

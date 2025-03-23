@@ -7,11 +7,10 @@
 #include <fcntl.h>
 #include "http_private.h"
 #include "rio.h"
+#include "log.h"
 
 #define MINIMUM_NUM_HTTP_REQ_ARGUMENTS 2 // Expecting at minimum a METHOD and URI (simple request)
 #define SERVER_HTTP_VER 1.0
-
-#define RESSOURCE_ROOT "/home/jpoirier/Documents/simple_web_server/ressources" //TODO: This needs to be done via CLI 
 
 #define LEN(arr) sizeof(arr) / sizeof(arr[0])
 
@@ -38,11 +37,12 @@ char *http_method_strings[] = {FOREACH_HTTP_METHOD(STRING_GEN)};
 
 // REQUEST //
 
-http_req init_http_request(int client_fd, size_t max_req_len){
-    char in_buf[max_req_len];
-    http_req result;
+http_req init_http_request(int client_fd){
+    int num_spaces_in_request_line = 3;
+    int status_line_len = MAX_METHOD_LEN+MAX_URI_LEN+MAX_VER_LEN+num_spaces_in_request_line;   
+    char in_buf[status_line_len];
     
-    alloc_http_request(&result);
+    http_req result = alloc_http_request();
 
     if(!result){
         return result;
@@ -55,14 +55,14 @@ http_req init_http_request(int client_fd, size_t max_req_len){
 
     // Read request from client fd
     rio_t in_parser = readn_b_init(client_fd);
-    memset(in_buf, 0, max_req_len);
+    memset(in_buf, 0, status_line_len);
 
-    (void) readline_b(in_parser, in_buf, max_req_len-1);
+    (void) readline_b(in_parser, in_buf, status_line_len-1);
     readn_b_destroy(&in_parser);
 
     parse_http_method(in_buf, result);
     parse_http_uri(in_buf, result);
-    parse_http_version(in_buf, max_req_len, result);
+    parse_http_version(in_buf, status_line_len, result);
 
     return result;
 }
@@ -70,7 +70,7 @@ http_req init_http_request(int client_fd, size_t max_req_len){
 
 int get_http_request_method(http_req req, http_method *method){
     if(!req || !method){
-        printf("ERROR: invalid argument provided to get_http_request_method...\n");
+        LOG(ERROR,"Invalid argument provided to get_http_request_method...\n");
         return -1;
     }
 
@@ -82,7 +82,7 @@ int get_http_request_method(http_req req, http_method *method){
 
 int get_http_request_uri(http_req req, char *uri){
     if(!req || !uri){
-        printf("ERROR: invalid argument provided to get_http_request_uri...\n");
+        LOG(ERROR,"Invalid argument provided to get_http_request_uri...\n");
         return -1;
     }
 
@@ -93,12 +93,12 @@ int get_http_request_uri(http_req req, char *uri){
 
 int get_http_request_version(http_req req, char *version){
     if(!req){
-        printf("ERROR: invalid argument provided to get_http_request_version...\n");
+        LOG(ERROR,"Invalid argument provided to get_http_request_version...\n");
         return -1;
     }
 
     else if(!req->version){
-        printf("ERROR: Request version on simple request is empty...\n");
+        LOG(ERROR,"Request version on simple request is empty...\n");
         return -1;
     }
     
@@ -180,6 +180,16 @@ int get_http_response_type(http_resp response, int *type){
     return 0;
 }
 
+
+int get_http_response_status_code(http_resp response, int *status_code){
+    if(!response || !status_code)
+        return -1;
+
+    *status_code = response->_return_code;
+    return 0;
+}
+
+
 /**
  * @brief Get the http response from request object
  * 
@@ -196,7 +206,7 @@ http_resp get_http_response_from_request(http_req request_to_process){
     http_resp response = init_http_response();
 
     if(!response){
-        printf("ERROR: Something went wrong trying to initialize the response!\n");
+        LOG(ERROR,"Something went wrong trying to initialize the response!\n");
         return NULL;
     }
 
@@ -226,7 +236,7 @@ http_resp get_http_response_from_request(http_req request_to_process){
                 break;
         
             default:
-                printf("ERROR: Unrecognized response type... Internal error\n");
+                LOG(ERROR,"Unrecognized response type... Internal error\n");
                 return NULL;
         }
 
@@ -236,18 +246,9 @@ http_resp get_http_response_from_request(http_req request_to_process){
 
 // HELPERS //
 
-
-void alloc_http_request(http_req *result){
-    if(!result){
-        printf("ERROR: Bad http_req reference provided\n");
-        return;
-    }
-
+http_req alloc_http_request(){
     http_req tmp = (http_req) calloc(1, sizeof(struct _http_req));
-    
-    *result = tmp ? tmp : NULL;
-    
-    return;
+    return tmp;
 }
 
 /**
@@ -297,7 +298,7 @@ static void http_resp_status_code_to_str(int status_code, char *buff){
             break;
 
         case NOT_IMPLEMENTED:
-            strncpy(buff, "Not Imeplemented", 30);  
+            strncpy(buff, "Not Implemented", 30);  
             break;
         
         case INTERNAL_ERROR:
@@ -323,10 +324,9 @@ static void http_resp_status_code_to_str(int status_code, char *buff){
  */
 static int formulate_full_response(http_req request_to_process, http_resp response){
     char status_code_str[30];
-    char content_type[MAX_RES_TYPE_LEN];
 
     if(!response){
-        printf("ERROR: Null response provided... returning without populating response\n");
+        LOG(ERROR,"Null response provided... returning without populating response\n");
         return -1;
     }
 
@@ -334,7 +334,7 @@ static int formulate_full_response(http_req request_to_process, http_resp respon
         response->_return_code = BAD_REQUEST;
     }
     
-    printf("DEBUG: Formulating Full HTTP response...\n");
+    LOG(DEBUG,"Formulating Full HTTP response...\n");
 
     http_resp_status_code_to_str(response->_return_code, status_code_str);
    
@@ -370,7 +370,7 @@ static int formulate_full_response(http_req request_to_process, http_resp respon
  * @param response The response formulated based on the client request.
  */
 static int formulate_simple_response(http_req request_to_process, http_resp response){
-    printf("DEBUG: Formulating Simple HTTP response...\n");
+    LOG(DEBUG,"Formulating Simple HTTP response...\n");
     return 0;
 }
 
@@ -383,12 +383,12 @@ static int formulate_simple_response(http_req request_to_process, http_resp resp
  */
 static void precheck_request(http_req request_to_process, http_resp response){
     if(!response){
-        printf("ERROR: Null response object provided!\n");
+        LOG(ERROR,"Null response object provided!\n");
         return;
     }
 
     else if(!request_to_process){
-        printf("ERROR: Internal error\n");
+        LOG(ERROR,"Internal error\n");
         response->_return_code = INTERNAL_ERROR;
         return;
     }
@@ -409,13 +409,13 @@ static void precheck_request(http_req request_to_process, http_resp response){
 static void validate_http_method(http_req request_to_process, http_resp response)
 {
     if(request_to_process->method == UNKNOWN){
-        printf("ERROR: Empty request method... invalid request!\n");
+        LOG(ERROR,"Empty request method... invalid request!\n");
         response->_return_code = BAD_REQUEST;
         return;
     }
 
     else if(response->response_type == SIMPLE && request_to_process->method != GET){
-        printf("ERROR: method not supported for simple request\n");
+        LOG(ERROR,"Method not supported for simple request\n");
         response->_return_code = BAD_REQUEST;
         return;
     }
@@ -431,16 +431,16 @@ static void validate_http_uri(http_req request_to_process, http_resp response)
              request_to_process->_ressource_location,
              strcmp(request_to_process->_ressource_name, "/") == 0 ? "/index.html" : request_to_process->_ressource_name);
     
-    printf("Ressource full path: %s\n", request_to_process->_ressource_abs_path);
+    LOG(DEBUG,"Ressource full path: %s\n", request_to_process->_ressource_abs_path);
 
     if(access(request_to_process->_ressource_abs_path, F_OK) != 0){
-        printf("ERROR: Could not access %s\n", request_to_process->_ressource_abs_path);
+        LOG(ERROR,"Could not access %s\n", request_to_process->_ressource_abs_path);
         response->_return_code = FILE_NOT_FOUND;
         return;
     }
 
     else if(access(request_to_process->_ressource_abs_path, R_OK) != 0){ // TODO: For now, only checking read permissions, but this will change when we add executables
-        printf("ERROR: Bad permissions for requested ressource %s\n", request_to_process->_ressource_abs_path);
+        LOG(ERROR,"Bad permissions for requested ressource %s\n", request_to_process->_ressource_abs_path);
         response->_return_code = UNAUTHORIZED;
         return;
     }
@@ -479,13 +479,13 @@ static void validate_http_version(http_req request_to_process, http_resp respons
     }
 
     else if(regexec(&re_valid_request, request_to_process->version, 1, re_valid_req_result, 0) == REG_NOMATCH){
-        printf("ERROR: malformed request... invalid http version\n");
+        LOG(ERROR,"malformed request... invalid http version\n");
         response->_return_code = BAD_REQUEST;
         goto clean_up;
     }
 
     else if(regexec(&re_full, request_to_process->version, 1, re_full_result, 0) == REG_NOMATCH){
-        printf("ERROR: Unsupported request version\n");
+        LOG(ERROR,"Unsupported request version\n");
         // Currently only supporting Full requests for version 1.0 and 1.1
         response->_return_code = UNSUPPORTED_VER;
     }
@@ -505,7 +505,7 @@ static void validate_http_version(http_req request_to_process, http_resp respons
 static void get_ressource_size(http_req request, http_resp response)
 {
     if(!request || !response){
-        printf("ERROR: Invalid buffer reference provided for fetching html content.\n");
+        LOG(ERROR,"Invalid buffer reference provided for fetching html content.\n");
         return;
     }
 
@@ -516,14 +516,14 @@ static void get_ressource_size(http_req request, http_resp response)
     ressource_fd = open(request->_ressource_abs_path, O_RDONLY);
 
     if(!ressource_fd){
-        printf("ERROR: Failed to open file descriptor for requested ressource %s\n", request->_ressource_abs_path);
+        LOG(ERROR,"Failed to get file descriptor for requested ressource %s\n", request->_ressource_abs_path);
         goto clean_up;
     }
 
     stat_result = fstat(ressource_fd, &ressource_info); 
     
     if(stat_result == -1){
-        printf("ERROR: Failed to get %s metadata\n", request->_ressource_abs_path);
+        LOG(ERROR,"Failed to get %s metadata\n", request->_ressource_abs_path);
         goto clean_up;
     }
 
@@ -558,7 +558,7 @@ static int get_ressource_content_type(http_req request, http_resp response)
 
 
     if(!request || !response){
-        printf("ERROR: Invalid input for getting ressource type!\n");
+        LOG(ERROR,"Invalid input for getting ressource type!\n");
         return -1;
     }
 
@@ -571,11 +571,11 @@ static int get_ressource_content_type(http_req request, http_resp response)
         }
 
         strncpy(response->_content_type, recognized_ext_mappings[i].content_type, MAX_RES_TYPE_LEN-1);
-        printf("%s is of Content-Type: %s\n", request->_ressource_abs_path, recognized_ext_mappings[i].content_type);
+        LOG(DEBUG,"%s is of Content-Type: %s\n", request->_ressource_abs_path, recognized_ext_mappings[i].content_type);
         return 0;
     }
 
-    printf("WARNING: Could not determine content type for requested ressource: %s... using default\n", request->_ressource_abs_path);
+    LOG(WARNING,"Could not determine content type for requested ressource: %s... using default\n", request->_ressource_abs_path);
     strncpy(response->_content_type, default_content_type, MAX_RES_TYPE_LEN -1);
     return 0;
 }
@@ -587,7 +587,7 @@ static void parse_http_method(const char *in_buf, http_req request)
     char *result;
     
     if(!in_buf){
-        printf("ERROR: Invalid request input\n");
+        LOG(ERROR,"Invalid request input\n");
         return;
     }
 
@@ -622,17 +622,17 @@ static void parse_http_uri(const char *in_buf, http_req request){
     snprintf(request_uri_pat, MAX_URI_LEN, "(%s://%s)?(%s) ", request_scheme, domain_or_ip_pat, ressource_pat);
 
     if(!in_buf){
-        printf("ERROR: Invalid request input\n");
+        LOG(ERROR,"Invalid request input\n");
         return;
     }
 
     else if(regcomp(&re_valid_request_uri, request_uri_pat, REG_EXTENDED) != 0){
-        printf("ERROR: Failed to compile request uri pattern\n");
+        LOG(ERROR,"Failed to compile request uri pattern\n");
         goto clean_up;
     }
     
     else if(regexec(&re_valid_request_uri, in_buf, 3, re_request_uri_result, 0) != 0){
-        printf("ERROR: Invalid URI in request: %s\n", in_buf);
+        LOG(ERROR,"Invalid URI in request: %s\n", in_buf);
         goto clean_up;
     }
 
@@ -666,25 +666,24 @@ static void parse_http_version(const char *in_buf, size_t in_buf_len, http_req r
     char *version_pat = "([0-9]\\.[0-9])\r\n$";
 
     if(!in_buf || in_buf_len == 0){
-        printf("ERROR: Invalid request input\n");
+        LOG(ERROR,"Invalid request input\n");
         return;
     }
 
     strncpy(in_buf_cpy, in_buf, in_buf_len-1);
 
     if(regcomp(&re_valid_version, version_pat, REG_EXTENDED) != 0){
-        printf("ERROR: Failed to compile request method pattern\n");
+        LOG(ERROR,"Failed to compile request method pattern\n");
         return;
     }
 
     else if(regexec(&re_valid_version, in_buf_cpy, 2, re_request_version_result, 0) != 0){
-        printf("ERROR: Failed to find a method in provided request\n");
+        LOG(ERROR,"Failed to find a method in provided request\n");
         regfree(&re_valid_version);
         return;
     }
 
     int version_match_len = get_match_object_len(re_request_version_result[1]);
-    printf("%d\n", version_match_len);
     version_match_len = version_match_len > MAX_VER_LEN ? MAX_VER_LEN : version_match_len;
 
     strncpy(request->version, in_buf + re_request_version_result[1].rm_so, version_match_len);

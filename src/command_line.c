@@ -3,12 +3,14 @@
 #include <string.h>
 #include <unistd.h>
 #include "command_line_private.h"
+#include "log.h"
 
 static void _print_help();
 
 typedef bool (*cli_validation_func)(char *, struct cli *);
 
 char server_root_location[MAX_SERVER_ROOT_LEN];
+log_level user_provided_log_level = DEFAULT;
 
 bool parse_cli(int argc, char *argv[], struct cli *result){
     if(!result){
@@ -16,7 +18,7 @@ bool parse_cli(int argc, char *argv[], struct cli *result){
         return false;
     }
 
-    if(argc < 3){
+    if(argc < MIN_ARGUMENTS){
         printf("ERROR: invalid number of input arguments provided...\n");
         _print_help();
         return false;
@@ -27,11 +29,19 @@ bool parse_cli(int argc, char *argv[], struct cli *result){
         return false;
     }
 
+    else if(argc > MIN_ARGUMENTS){
+        for(int i = MIN_ARGUMENTS; i < argc; i++){
+            if(strcmp(argv[i], "-v") == 0){
+                user_provided_log_level = DEBUG;
+            }
+        }
+    }
+
     // Note: Important that validation functions are ordered the same as
     // how they appear in the CLI prompt, otherwise argument mapping will break 
-    cli_validation_func validation_funcs[MIN_ARGUMENTS-1] = {validate_port_num, validate_server_root};
+    cli_validation_func validation_funcs[] = {validate_port_num, validate_server_root};
 
-    for(int i=0; i<MIN_ARGUMENTS-1; i++){
+    for(int i=0; i<(sizeof(validation_funcs) / sizeof(validation_funcs[0])); i++){
         bool argument_valid = validation_funcs[i](argv[i+1], result);
         
         if(!argument_valid){
@@ -39,7 +49,6 @@ bool parse_cli(int argc, char *argv[], struct cli *result){
             return false;
         }
     }
-
     return true;
 }
 
@@ -104,9 +113,10 @@ bool validate_server_root(char *server_root_to_validate, struct cli *result){
 
 
 static void _print_help(){
-    printf("Usage: sws PORT SERVER_ROOT\n\n");
+    printf("Usage: sws PORT SERVER_ROOT [-v]\n\n");
     printf("\nPORT must be in range %d to %d and represents the port that your server will run on.\n", PORT_MIN, PORT_MAX);
     printf("\nSERVER_ROOT must be a valid path on host machine which doesn't exceed %d characters.\n", MAX_SERVER_ROOT_LEN-1);
+    printf("\n-v to run server with added verbosity");
     printf("\n");
     return;
 }

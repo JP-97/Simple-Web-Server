@@ -14,9 +14,9 @@
 #include "rio.h"
 #include "http.h"
 #include "bbuf.h"
+#include "log.h"
 
 #define BUFF_SIZE 100 // TODO need to optimize this
-#define MAX_IN_LEN 100
 #define MAX_BBUFF_LEN 25
 #define MAX_SERVER_HOSTNAME_LEN 25
 #define NUM_WORKER_THREADS 5
@@ -67,11 +67,11 @@ static void run_server(struct cli *cli_in){
     worker_data_t worker_data;
 
     if(!cli_in){
-        printf("ERROR: Failed in initializing internal data structures!\n");
+        LOG(ERROR,"Failed in initializing internal data structures!\n");
         return;
     }
 
-    printf("Initializing server with root directory: %s\n", cli_in->server_root);
+    LOG(INFO, "Initializing server with root directory: %s\n", cli_in->server_root);
     strcpy(server_root, cli_in->server_root);
 
     // Set up bounded buffer and worker pool
@@ -96,12 +96,12 @@ static void run_server(struct cli *cli_in){
     int bound_server_port = bind_server_port(cli_in->port, &server_fd, host_name);
     
     if(bound_server_port != 0){
-        printf("ERROR: Failed to bind server to port %d\n", cli_in->port);
+        LOG(ERROR,"Failed to bind server to port %d\n", cli_in->port);
         exit(EXIT_FAILURE);
     }
 
-    printf("Successfully initialized server at %s:%d\n" \
-           "Enter CTRL+C to kill the server...\n", host_name, cli_in->port);
+    LOG(INFO,"Successfully initialized server at %s:%d\n" \
+             "Enter CTRL+C to kill the server...\n", host_name, cli_in->port);
 
     // Enter main loop and listen for incoming connections
     while(1){
@@ -109,22 +109,22 @@ static void run_server(struct cli *cli_in){
         client_fd = accept(server_fd, (struct sockaddr*) &client_con, &client_con_size);
         
         if (client_fd == -1){
-            printf("ERROR: Could not accept client connection due to: %s\n", strerror(errno));
+            LOG(ERROR,"Could not accept client connection due to: %s\n", strerror(errno));
             exit(1);
         }
 
         // Get human readable conversion of client connection info
         got_info = getnameinfo((struct sockaddr*)&client_con, client_con_size, client_addr, BUFF_SIZE, NULL, 0, NI_NUMERICHOST);
         if (got_info != 0){
-            printf("ERROR: Could not determine human readable conversion of client info due to: %s\n", strerror(errno));
+            LOG(ERROR,"Could not determine human readable conversion of client info due to: %s\n", strerror(errno));
             exit(1);
         }
 
-        printf("Successfully established connection with %s!\n", client_addr);
+        LOG(INFO,"Successfully established connection with %s!\n", client_addr);
 
         // Add the client FD to bounded buffer so it can be handled by one of workers
         if (bbuf_insert(bbuf, client_fd) != 0){
-            printf("WARNING: Failed to insert client connection into buffer...\n");
+            LOG(ERROR,"WARNING: Failed to insert client connection into buffer...\n");
             continue;
         };
     }
@@ -159,7 +159,7 @@ static int bind_server_port(int server_port, int *svr_fd, char *server_ip){
     candidate_sockets = getaddrinfo(NULL, port_num, &hints, &result);
 
     if (candidate_sockets != 0){
-        printf("Failed to discover an address to bind to\n");
+        LOG(ERROR,"Failed to discover an address to bind to\n");
         return -1;
     }
 
@@ -181,13 +181,13 @@ static int bind_server_port(int server_port, int *svr_fd, char *server_ip){
     }
 
     if (!rp){
-        printf("Failed to bind to a socket!\n");
+        LOG(ERROR,"Failed to bind to a socket!\n");
         close(server_fd);
         return -1;
     }
 
     if (listen(server_fd, 10) == -1){
-        printf("Failed to start listening on bound soket\n");
+        LOG(ERROR,"Failed to start listening on bound soket\n");
         close(server_fd);
         return -1;
     }
@@ -197,7 +197,7 @@ static int bind_server_port(int server_port, int *svr_fd, char *server_ip){
     // Get human-readable conversion of server address
     int got_info = getnameinfo(rp->ai_addr, rp->ai_addrlen, server_ip, MAX_SERVER_HOSTNAME_LEN, NULL, 0, flags);
     if (got_info != 0){
-        printf("ERROR: Could not determine human readable conversion of server info due to: %s\n", strerror(errno));
+        LOG(ERROR,"Could not determine human readable conversion of server info due to: %s\n", strerror(errno));
         close(server_fd);
         return -1;
     }
@@ -230,7 +230,7 @@ void *process_incoming_request(void *args){
     pthread_detach(pthread_self());
 
     if(!args){
-        printf("ERROR: No worker thread data provided!\n");
+        LOG(ERROR,"No worker thread data provided!\n");
         exit(1);
     }
 
@@ -239,19 +239,19 @@ void *process_incoming_request(void *args){
 
     while(1){
         bbuf_remove(buff, &client_fd); // This blocks indefinitely until a request comes
-        printf("Processing client request fd %d\n", client_fd);
+        LOG(INFO,"Processing client request fd %d\n", client_fd);
         
         if(parse_request(client_fd, &request) != 0){
-            printf("ERROR: Something went wrong parsing HTTP Request\n");
+            LOG(ERROR,"Something went wrong parsing HTTP Request\n");
             exit(1); ////////////////////////////////TODO: Instead of killing the entire program immediately, figure out how this thread can signal the others that they should exit once they're done with their request 
         }
 
-        printf("Formulating HTTP response...\n");
+        LOG(INFO,"Formulating HTTP response...\n");
 
         response = get_http_response_from_request(request);
 
         if (!response){
-            printf("ERROR: Something went wrong processing HTTP request\n");
+            LOG(ERROR,"Something went wrong processing HTTP request\n");
             exit(1);
         }
 
@@ -262,7 +262,7 @@ void *process_incoming_request(void *args){
         get_http_response_ressource_fd(response, &ressource_fd);
 
 
-        printf("Sending the HTTP response back to the client...\n");
+        LOG(INFO,"Sending the HTTP response back to the client...\n");
         bytes_written = writen_b(client_fd, status, strlen(status));
         
         if(bytes_written == -1){
@@ -301,19 +301,19 @@ static int parse_request(int client_fd, http_req *result){
     char uri[MAX_URI_LEN] = {0};
 
     if(!result){
-        printf("ERROR: Invalid result reference provided!\n");
+        LOG(ERROR, "Invalid result reference provided!\n");
         return -1;
     }
 
     if(client_fd < 0){
-        printf("ERROR: Bad client file descriptor provided!\n");
+        LOG(ERROR, "Bad client file descriptor provided!\n");
         return -1;
     }
 
-    tmp_req = init_http_request(client_fd, MAX_IN_LEN);
+    tmp_req = init_http_request(client_fd);
     
     if(!tmp_req){
-        printf("ERROR: failed to parse request!\n");
+        LOG(ERROR, "failed to parse request!\n");
         return -1;
     }
     
@@ -321,7 +321,7 @@ static int parse_request(int client_fd, http_req *result){
     get_http_request_uri(tmp_req, uri);
     get_http_request_version(tmp_req, version);
 
-    printf("Got the following request:\n \
+    LOG(DEBUG, "Got the following request:\n \
     METHOD:   %s\n \
     URI:      %s\n \
     HTTP VER: %s\n", http_method_strings[method], uri, version);
@@ -344,23 +344,23 @@ static bool set_up_worker_pool(worker_data_t *worker_data){
 
     for(int i=0; i<NUM_WORKER_THREADS; i++){
         if((rc = pthread_create(&tid, NULL, process_incoming_request, (void *)worker_data)) != 0){
-            printf("ERROR: Something went wrong creating one of the worker threads... got rc %d\n", rc);
+            LOG(ERROR, "Something went wrong creating one of the worker threads... got rc %d\n", rc);
             return false;
         }
-        printf("DEBUG: Created worker thread with thread ID: %lu\n", tid);
+        LOG(DEBUG, "Created worker thread with thread ID: %lu\n", tid);
     }
     return true; 
 }
 
 
 static void sig_int_handler(int exit_code){
-    printf("\nGoodbye...\n");
+    LOG(INFO, "\nGoodbye...\n");
     exit(EXIT_SUCCESS);
 }
 
 
 static void sig_term_handler(int exit_code){
-    printf("\nweb server was terminated!\n");
+    LOG(INFO, "\nweb server was terminated!\n");
     exit(EXIT_FAILURE);
 }
 
