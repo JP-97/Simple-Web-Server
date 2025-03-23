@@ -3,21 +3,25 @@
 #include <string.h>
 #include <unistd.h>
 #include "command_line_private.h"
+#include "log.h"
 
 static void _print_help();
 
 typedef bool (*cli_validation_func)(char *, struct cli *);
 
+// Externs
 char server_root_location[MAX_SERVER_ROOT_LEN];
+log_level user_provided_log_level = DEFAULT;
+
 
 bool parse_cli(int argc, char *argv[], struct cli *result){
     if(!result){
-        printf("ERROR: invalid reference provided as input to arg parser...\n");
+        LOG(ERROR, "invalid reference provided as input to arg parser...\n");
         return false;
     }
 
-    if(argc < 3){
-        printf("ERROR: invalid number of input arguments provided...\n");
+    if(argc < MIN_ARGUMENTS){
+        LOG(ERROR, "invalid number of input arguments provided...\n");
         _print_help();
         return false;
     }
@@ -27,11 +31,19 @@ bool parse_cli(int argc, char *argv[], struct cli *result){
         return false;
     }
 
+    else if(argc > MIN_ARGUMENTS){
+        for(int i = MIN_ARGUMENTS; i < argc; i++){
+            if(strcmp(argv[i], "-v") == 0){
+                user_provided_log_level = DEBUG;
+            }
+        }
+    }
+
     // Note: Important that validation functions are ordered the same as
     // how they appear in the CLI prompt, otherwise argument mapping will break 
-    cli_validation_func validation_funcs[MIN_ARGUMENTS-1] = {validate_port_num, validate_server_root};
+    cli_validation_func validation_funcs[] = {validate_port_num, validate_server_root};
 
-    for(int i=0; i<MIN_ARGUMENTS-1; i++){
+    for(int i=0; i<(sizeof(validation_funcs) / sizeof(validation_funcs[0])); i++){
         bool argument_valid = validation_funcs[i](argv[i+1], result);
         
         if(!argument_valid){
@@ -39,7 +51,6 @@ bool parse_cli(int argc, char *argv[], struct cli *result){
             return false;
         }
     }
-
     return true;
 }
 
@@ -48,7 +59,7 @@ bool validate_port_num(char *port_num_to_validate, struct cli *result){
     int port_num_tmp;
 
     if(!result){
-        printf("ERROR: Internal error processing port num!...\n");
+        LOG(ERROR, "Internal error processing port num!...\n");
         return false;
     }
 
@@ -56,12 +67,12 @@ bool validate_port_num(char *port_num_to_validate, struct cli *result){
 
     if(port_num_tmp == 0){
         // non-integer provided for port
-        printf("ERROR: Port must be able to cast to an integer!...\n\n");
+        LOG(ERROR, "Port must be able to cast to an integer!...\n\n");
         return false;
 
     }
     else if(port_num_tmp < PORT_MIN || port_num_tmp > PORT_MAX){
-        printf("ERROR: Provided port is outside of allowable port range!...\n");
+        LOG(ERROR, "Provided port is outside of allowable port range!...\n");
         return false;
     }
 
@@ -75,24 +86,24 @@ bool validate_server_root(char *server_root_to_validate, struct cli *result){
     int was_copied;
 
     if(!result){
-        printf("ERROR: Internal error processing server name!...\n");
+        LOG(ERROR, "Internal error processing server name!...\n");
         return false;
     }
 
     was_copied = snprintf(server_root_tmp, MAX_SERVER_ROOT_LEN, "%s", server_root_to_validate);
 
     if(was_copied == -1 || was_copied >= MAX_SERVER_ROOT_LEN){
-        printf("ERROR: Failed to process provided server root!...\n");
+        LOG(ERROR, "Failed to process provided server root!...\n");
         return false;
     }
 
     else if(access(server_root_tmp, F_OK) != 0){
-        printf("ERROR: Provided server root (%s) is not accessible!...\n", server_root_to_validate);
+        LOG(ERROR, "Provided server root (%s) is not accessible!...\n", server_root_to_validate);
         return false;
     }
 
     else if(access(server_root_tmp, R_OK) != 0 || access(server_root_tmp, X_OK) != 0){
-        printf("ERROR: Provided server root (%s) doesn't have the right permissions!...\n", server_root_to_validate);
+        LOG(ERROR, "Provided server root (%s) doesn't have the right permissions!...\n", server_root_to_validate);
         return false;
     }
 
@@ -104,9 +115,10 @@ bool validate_server_root(char *server_root_to_validate, struct cli *result){
 
 
 static void _print_help(){
-    printf("Usage: sws PORT SERVER_ROOT\n\n");
+    printf("Usage: sws PORT SERVER_ROOT [-v]\n\n");
     printf("\nPORT must be in range %d to %d and represents the port that your server will run on.\n", PORT_MIN, PORT_MAX);
     printf("\nSERVER_ROOT must be a valid path on host machine which doesn't exceed %d characters.\n", MAX_SERVER_ROOT_LEN-1);
+    printf("\n-v to run server with added verbosity");
     printf("\n");
     return;
 }
