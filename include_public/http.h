@@ -46,13 +46,14 @@ typedef struct _http_resp *http_resp;
 
 
 typedef enum _http_return_code {
-    OK              = 200,
-    BAD_REQUEST     = 400,
-    UNAUTHORIZED    = 401, 
-    FILE_NOT_FOUND  = 404,
-    INTERNAL_ERROR  = 500,
-    NOT_IMPLEMENTED = 501,
-    UNSUPPORTED_VER = 505
+    OK                  = 200,
+    BAD_REQUEST         = 400,
+    UNAUTHORIZED        = 401, 
+    FILE_NOT_FOUND      = 404,
+    INTERNAL_ERROR      = 500,
+    NOT_IMPLEMENTED     = 501,
+    SERVICE_UNAVAILABLE = 503,
+    UNSUPPORTED_VER     = 505
 
 } http_return_code;
 
@@ -134,6 +135,15 @@ http_resp get_http_response_from_request(http_req request_to_process);
 
 
 /**
+ * @brief Get a response object with status code and headers indicating
+ *        that the server is shutting down.
+ * 
+ * @return http_resp the initialized shutting down response object.
+ */
+http_resp get_server_shutting_down_response();
+
+
+/**
  * @brief Get the http response status
  * 
  * @param response the response from which to retrieve the status
@@ -182,5 +192,16 @@ int get_http_response_headers(http_resp response, char *headers, size_t max_body
  * @return int 0 if type is successfully retrieved, otherwise -1
  */
 int get_http_response_type(http_resp response, int *type);
+
+
+/**
+ * @brief Get the http response status code (200, 404, etc.)
+ * 
+ * @param response the response from which to retrieve the status code.
+ * @param status_code reference to store the status_code result.
+ * @return int 0 if status_code was retrieved, otherwise -1
+ */
+int get_http_response_status_code(http_resp response, int *status_code);
+
 
 #endif

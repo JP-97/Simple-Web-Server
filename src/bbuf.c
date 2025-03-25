@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "bbuf_private.h"
+#include "log.h"
 
 /*Forward Declarations*/
 static sem_t *init_unamed_semaphore(unsigned int initial_value);
@@ -13,7 +14,7 @@ bbuf_t bbuf_init(){
     bbuf_t tmp_buff = (bbuf_t) calloc(1, sizeof(struct _bbuf));
 
     if(!tmp_buff){
-        perror("ERROR: Failed to initialize bounded buffer\n");
+        LOG(ERROR, "Failed to initialize bounded buffer\n");
         return NULL;
     }
 
@@ -56,7 +57,7 @@ void bbuf_destroy(bbuf_t bbuf){
 
 int bbuf_insert(bbuf_t bbuf, int fd_to_insert){
     if(!bbuf){
-        printf("ERROR: NULL buffer reference provided!\n");
+        LOG(ERROR, "NULL buffer reference provided!\n");
         return -1;
     }
     pthread_t thread_id = pthread_self();
@@ -67,7 +68,7 @@ int bbuf_insert(bbuf_t bbuf, int fd_to_insert){
     // Insert slot at end of buffer
     bbuf->buff[(bbuf->rear)%(bbuf->max_size)] = fd_to_insert;
     (bbuf->rear)++;
-    printf("DEBUG: Thread %lu: Inserted fd %d at index %d\n", (unsigned long)thread_id, fd_to_insert, (bbuf->rear)%(bbuf->max_size));
+    LOG(DEBUG, "Thread %lu: Inserted fd %d at index %d\n", (unsigned long)thread_id, fd_to_insert, (bbuf->rear)%(bbuf->max_size));
     // Release mutex
     sem_post(bbuf->mutex);
     // Increment Item
@@ -79,7 +80,7 @@ int bbuf_remove(bbuf_t bbuf, int *fd){
     int removed_fd;
 
     if(!bbuf){
-        printf("ERROR: NULL buffer reference provided!\n");
+        LOG(ERROR,"ERROR: NULL buffer reference provided!\n");
         return -1;
     }
 
@@ -91,7 +92,7 @@ int bbuf_remove(bbuf_t bbuf, int *fd){
     // Remove item from front of buffer
     removed_fd = bbuf->buff[(bbuf->front)%(bbuf->max_size)];
     (bbuf->front)++;
-    printf("DEBUG: Thread %lu: Removed fd %d from index %d\n",(unsigned long)thread_id, removed_fd, (bbuf->front)%(bbuf->max_size));
+    LOG(DEBUG, "Thread %lu: Removed fd %d from index %d\n",(unsigned long)thread_id, removed_fd, (bbuf->front)%(bbuf->max_size));
     // Release mutex
     sem_post(bbuf->mutex);
     // Increment slot
@@ -110,28 +111,33 @@ int get_bbuf_max_size(bbuf_t bbuf){
 }
 
 int get_bbuf_slots(bbuf_t bbuf){
-    int tmp, rc;
+    int tmp;
+    int rc;
+
     if(!bbuf){
-        printf("ERROR: provided handle is null\n");
+        LOG(ERROR, "provided handle is null\n");
         return -1;
     }
     rc = sem_getvalue(bbuf->slots, &tmp);
     if(rc != 0){
-        perror("ERROR: Failed to get number of free slots\n");
+        LOG(ERROR, "Failed to get number of free slots\n");
         return rc;
     }
     return tmp;
 }
 
 int get_bbuf_items(bbuf_t bbuf){
-    int tmp, rc;
+    int tmp;
+    int rc;
+
     if(!bbuf){
-        printf("ERROR: provided handle is null\n");
+        LOG(ERROR, "provided handle is null\n");
         return -1;
     }
+
     rc = sem_getvalue(bbuf->items, &tmp);
     if(rc != 0){
-        perror("ERROR: Failed to get number of free items\n");
+        LOG(ERROR, "Failed to get number of free items\n");
         return rc;
     }
     return tmp;

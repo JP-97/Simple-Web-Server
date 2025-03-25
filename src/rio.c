@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <sys/sendfile.h>
 #include "rio.h"
+#include "log.h"
 
 #define EXIT_FAILURE_RIO -1
 
@@ -63,7 +64,7 @@ ssize_t readn_b(rio_t rp, char *userbuf, size_t num_bytes){
             break;
         
         } else if (bytes_copied == -1){
-            printf("ERROR: Failed trying to read %ld bytes from fd %d...\n", num_bytes, rp->fd);
+            LOG(ERROR, "Failed trying to read %ld bytes from fd %d...\n", num_bytes, rp->fd);
             return -1;
         }
 
@@ -94,13 +95,13 @@ ssize_t readline_b(rio_t rp, void *userbuf, size_t maxlen){
             break;
 
         } else if (was_read == -1){
-            printf("ERROR: Failed trying to read a byte from %d...\n", rp->fd);
+            LOG(ERROR, "Failed trying to read a byte from %d...\n", rp->fd);
             return -1;
         
         } else if (((char*)userbuf)[i] == '\n'){
             // End of line encountered
             num_read++;
-            printf("Found end of line after reading %d bytes\n", num_read);
+            LOG(DEBUG, "Found end of line after reading %d bytes\n", num_read);
             return num_read;
         }
         i++;
@@ -123,12 +124,12 @@ ssize_t writen_b(int fd, void *userbuf, size_t num_bytes){
         bytes_written = write(fd, bufp, num_bytes);
         
         if (bytes_written == -1){
-            printf("ERROR: Failed to write %ldB to fd %d...\n", num_bytes, fd);
+            LOG(ERROR, "Failed to write %ldB to fd %d...\n", num_bytes, fd);
             return EXIT_FAILURE_RIO;
         }
 
         else if (errno == EINTR){
-            printf("Encountered signal %d, retrying...\n", errno);
+            LOG(DEBUG, "Encountered signal %d, retrying...\n", errno);
             bytes_written = 0;
             bufp = userbuf;
             retry_num++;
@@ -139,7 +140,7 @@ ssize_t writen_b(int fd, void *userbuf, size_t num_bytes){
         bufp += bytes_written;
     }
 
-    printf("Successfully wrote %ldB to fd %d...\n", bytes_written, fd);
+    LOG(DEBUG, "Successfully wrote %ldB to fd %d...\n", bytes_written, fd);
     return EXIT_SUCCESS;
 }
 
@@ -158,20 +159,20 @@ ssize_t writen(int out_fd, int in_fd, size_t num_bytes){
         if (bytes_written == -1){
 
             if (errno == EINTR){
-                printf("Encountered signal %d, retrying...\n", errno);
+                LOG(DEBUG, "Encountered signal %d, retrying...\n", errno);
                 bytes_written = 0;
                 retry_num++;
                 continue;
             }
 
-            printf("ERROR: Failed to write %ldB to fd %d...\n", num_bytes, out_fd);
+            LOG(ERROR, "Failed to write %ldB to fd %d...\n", num_bytes, out_fd);
             return EXIT_FAILURE_RIO;
         }
 
         bytes_left -= bytes_written;
     }
 
-    printf("Successfully wrote %ldB to fd %d...\n", bytes_written, out_fd);
+    LOG(DEBUG, "Successfully wrote %ldB to fd %d...\n", bytes_written, out_fd);
     return EXIT_SUCCESS;
 }
 
@@ -191,7 +192,7 @@ static ssize_t read_b(rio_t rp, char *userbuf, size_t num_to_read){
     
         rp->remaining = read(rp->fd, rp->rio_buf, sizeof(rp->rio_buf));
         if (rp->remaining == -1 && errno != EINTR){
-            printf("ERROR: Encountered the following error trying to read from fd %d: %s\n", rp->fd, strerror(errno));
+            LOG(ERROR, "Encountered the following error trying to read from fd %d: %s\n", rp->fd, strerror(errno));
             return -1;
         
         } else if (rp->remaining == 0){
