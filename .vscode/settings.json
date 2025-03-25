@@ -10,7 +10,13 @@
         "command_line.h": "c",
         "type_traits": "c",
         "bbuf.h": "c",
-        "http.h": "c"
+        "http.h": "c",
+        "command_line_private.h": "c",
+        "typeinfo": "c",
+        "http_private.h": "c",
+        "stdlib.h": "c",
+        "rio.h": "c",
+        "string.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
