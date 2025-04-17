@@ -14,7 +14,7 @@ bbuf_t bbuf_init(){
     bbuf_t tmp_buff = (bbuf_t) calloc(1, sizeof(struct _bbuf));
 
     if(!tmp_buff){
-        perror("ERROR: Failed to initialize bounded buffer\n");
+        LOG(ERROR, "Failed to initialize bounded buffer\n");
         return NULL;
     }
 
@@ -111,7 +111,9 @@ int get_bbuf_max_size(bbuf_t bbuf){
 }
 
 int get_bbuf_slots(bbuf_t bbuf){
-    int tmp, rc;
+    int tmp;
+    int rc;
+
     if(!bbuf){
         LOG(ERROR, "provided handle is null\n");
         return -1;
@@ -125,11 +127,14 @@ int get_bbuf_slots(bbuf_t bbuf){
 }
 
 int get_bbuf_items(bbuf_t bbuf){
-    int tmp, rc;
+    int tmp;
+    int rc;
+
     if(!bbuf){
         LOG(ERROR, "provided handle is null\n");
         return -1;
     }
+
     rc = sem_getvalue(bbuf->items, &tmp);
     if(rc != 0){
         LOG(ERROR, "Failed to get number of free items\n");
