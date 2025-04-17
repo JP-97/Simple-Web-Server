@@ -46,13 +46,14 @@ typedef struct _http_resp *http_resp;
 
 
 typedef enum _http_return_code {
-    OK              = 200,
-    BAD_REQUEST     = 400,
-    UNAUTHORIZED    = 401, 
-    FILE_NOT_FOUND  = 404,
-    INTERNAL_ERROR  = 500,
-    NOT_IMPLEMENTED = 501,
-    UNSUPPORTED_VER = 505
+    OK                  = 200,
+    BAD_REQUEST         = 400,
+    UNAUTHORIZED        = 401, 
+    FILE_NOT_FOUND      = 404,
+    INTERNAL_ERROR      = 500,
+    NOT_IMPLEMENTED     = 501,
+    SERVICE_UNAVAILABLE = 503,
+    UNSUPPORTED_VER     = 505
 
 } http_return_code;
 
@@ -131,6 +132,15 @@ int get_http_request_version(http_req req, char *version);
  * @return http_resp the initialized http response handler.
  */
 http_resp get_http_response_from_request(http_req request_to_process);
+
+
+/**
+ * @brief Get a response object with status code and headers indicating
+ *        that the server is shutting down.
+ * 
+ * @return http_resp the initialized shutting down response object.
+ */
+http_resp get_server_shutting_down_response();
 
 
 /**

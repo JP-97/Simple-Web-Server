@@ -190,6 +190,45 @@ int get_http_response_status_code(http_resp response, int *status_code){
 }
 
 
+
+/**
+ * @brief This specifically provides a response object that looks like the following:
+ * 
+ *   HTTP/1.1 503 Service Unavailable
+ *   Connection: close
+ *   Content-Type: text/plain
+ * 
+ * @return response handle representing what's shown above on success, otherwise NULL
+ */
+http_resp get_server_shutting_down_response(){
+    char status_code_str[30];
+
+    LOG(DEBUG, "Formulating shutting down response...\n");
+    http_resp response = init_http_response();
+
+    if(!response){
+        LOG(ERROR,"Something went wrong trying to initialize the response!\n");
+        return NULL;
+    }
+
+    // HTTP-Version Status-Code Reason-Phrase
+    http_resp_status_code_to_str(SERVICE_UNAVAILABLE, status_code_str);
+    snprintf(response->status, 
+             MAX_RESP_STATUS_LEN, 
+             "HTTP/%.1f %d %s\r\n", 
+             SERVER_HTTP_VER, 
+             SERVICE_UNAVAILABLE,
+             status_code_str);
+
+    // Populate headers
+    snprintf(response->headers,
+             MAX_RESP_HEADERS_LEN,
+             "Connection: close\r\nContent-type: text/plain\r\n\r\n");
+    
+    return response;
+}
+
+
 /**
  * @brief Get the http response from request object
  * 
@@ -305,6 +344,10 @@ static void http_resp_status_code_to_str(int status_code, char *buff){
             strncpy(buff, "Internal server error", 30);
             break;
     
+        case SERVICE_UNAVAILABLE:
+            strncpy(buff, "Service Unavailable", 30);
+            break;
+
         case UNSUPPORTED_VER:
             strncpy(buff, "Unsupported request version", 30);
             break;
